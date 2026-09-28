@@ -17,6 +17,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="${1:-dev}"
+# The version names the directory replaced below, so it must never be a path.
+case "$VERSION" in
+  .*|*[!A-Za-z0-9._-]*)
+    echo "error: version must be a plain name such as v0.3.2: $VERSION" >&2
+    exit 2
+    ;;
+esac
 NAME="inverso"
 DEPLOY="13.0"
 OUT="release/$VERSION"
