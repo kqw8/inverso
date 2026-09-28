@@ -57,6 +57,10 @@ final class ScrollEventProcessor {
         guard type == .scrollWheel, !ScrollTransform.isSynthetic(event) else {
             return Unmanaged.passUnretained(event)
         }
+        // Horizontal-only or empty wheel input cannot conflict with the vertical tail.
+        guard ScrollTransform.verticalSample(from: event).hasValue else {
+            return Unmanaged.passUnretained(event)
+        }
         guard isEligible(event) else { return direct(event) }
 
         let time = now()

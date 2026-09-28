@@ -121,10 +121,11 @@ Permission checks and log writes stay there; brief tap-state checks run on the
 event thread that owns the tap. Permission checks and log writes cannot hold up the scroll callback.
 A timeout notification re-enables the tap immediately; the health check rebuilds an
 invalid one and resumes when permission returns.
-Repeated identical failures are logged once until the state changes. Each log line
-starts with a local timestamp, and the health check reports when and how often macOS
-disabled the tap for a slow callback. If smooth mode cannot create its event source,
-wheel input is reversed directly and smoothing is retried at each health check.
+Repeated identical failures are logged once until the state changes. Status lines
+from the running daemon start with a local timestamp, and the health check reports
+when and how often macOS disabled the tap (after a slow callback or because of user
+input). If smooth mode cannot create its event source, wheel input is reversed
+directly and smoothing is retried at each health check.
 Logs are in `~/Library/Logs/inverso.err.log` and `~/Library/Logs/inverso.out.log`.
 
 ## Notes
@@ -136,12 +137,15 @@ Inverso handles ordinary physical mouse-wheel events. Trackpad-like events are p
   about 80 ms after the last input, and preserves fractional distance across frames.
   The 120 Hz frame timer stops when idle; it is not a mouse polling loop or a promise
   of display synchronization on every monitor.
-- Every synthetic event comes from one event source created when the tap starts.
-  The scroll callback itself never calls WindowServer, which is waiting for its answer.
+- Synthetic events share one event source, created with the smoothing processor
+  rather than per event. The scroll callback itself never calls WindowServer, which
+  is waiting for its answer.
 - A notch that smooth mode has taken over is always delivered: pointer movement,
-  clicks, dragging and modifier keys never discard it. Only a direction change, a
-  speed change, trackpad or native gesture input, modified or mixed-axis wheel input,
-  or a stall of 0.5 s or more ends the remaining tail early.
+  clicks, dragging, modifier keys and wheel events without vertical distance never
+  discard it. Only a direction change, a speed change, a stall of 0.5 s or more,
+  macOS disabling the tap, or vertical wheel input that smooth mode leaves to direct
+  reversal (trackpad or native gestures, already-continuous wheels, modified or
+  mixed-axis input) ends the remaining tail early.
 - Inverso taps scroll-wheel events only; pointer movement, clicks and keys never pass
   through it.
 - Already-continuous wheels, modified input and mixed-axis events use direct

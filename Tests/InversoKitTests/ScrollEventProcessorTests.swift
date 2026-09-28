@@ -254,6 +254,21 @@ final class ScrollEventProcessorTests: XCTestCase {
         }
     }
 
+    func testWheelEventsWithoutVerticalDistanceKeepPendingDistance() throws {
+        for kind in ["horizontal-only", "zero"] {
+            let harness = Harness()
+            _ = harness.processor.handle(type: .scrollWheel, event: try wheel(point: 40))
+            harness.time = 0.004
+            let event = try wheel(point: 0)
+            if kind == "horizontal-only" { event.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: 7) }
+            XCTAssertTrue(harness.processor.handle(type: .scrollWheel, event: event)?.takeUnretainedValue() === event)
+            XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2), kind == "zero" ? 0 : 7)
+            XCTAssertTrue(harness.driver.isRunning, kind)
+            harness.drain()
+            XCTAssertEqual(harness.pixels, -40, kind)
+        }
+    }
+
     func testNonContextFlagsDoNotDiscardAcceptedDistance() throws {
         let harness = Harness()
         _ = harness.processor.handle(type: .scrollWheel, event: try wheel(point: 40))
