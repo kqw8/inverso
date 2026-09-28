@@ -30,7 +30,7 @@ public final class EventTapService: EventTapControlling {
 
     public convenience init(smoothingEnabled: Bool = true) {
         self.init(permissionGranted: { Accessibility.isTrusted },
-                  makeConnection: { try SystemEventTapConnection(smoothingEnabled: smoothingEnabled, handler: $0) },
+                  makeConnection: { try SystemEventTapConnection(handler: $0) },
                   makeProcessor: { smoothingEnabled ? ScrollEventProcessor.production() : nil })
     }
 

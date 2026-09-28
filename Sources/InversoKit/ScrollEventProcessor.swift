@@ -15,10 +15,6 @@ final class ScrollEventProcessor {
     private var lastActivity: Double?
     private var location = CGPoint.zero
     private var flags = CGEventFlags()
-    private var targetProcess: Int64 = 0
-    private var latestWheelTimestamp: CGEventTimestamp = 0
-    private static let contextModifiers: CGEventFlags = [.maskShift, .maskControl, .maskAlternate,
-                                                        .maskCommand, .maskSecondaryFn, .maskAlphaShift]
 
     init(driver: SmoothingFrameDriving, now: @escaping () -> Double,
          makeEvent: @escaping (Int32) -> CGEvent?, post: @escaping (CGEvent) -> Void,
@@ -57,21 +53,8 @@ final class ScrollEventProcessor {
 
     func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         // Our frames must neither be reversed again nor cancel their own tail.
-        if ScrollTransform.isSynthetic(event) { return Unmanaged.passUnretained(event) }
-        guard type == .scrollWheel else {
-            // Passive and active tap sources need not dispatch in timestamp order.
-            if event.timestamp > 0 && event.timestamp < latestWheelTimestamp {
-                return Unmanaged.passUnretained(event)
-            }
-            let observedTarget = event.getIntegerValueField(.eventTargetUnixProcessID)
-            if type == .mouseMoved && direction != nil && isNearAnchor(event.location)
-                && event.flags.intersection(Self.contextModifiers) == flags.intersection(Self.contextModifiers)
-                && (observedTarget == 0 || targetProcess == 0 || observedTarget == targetProcess) {
-                // Tolerate tiny hand jitter, but never move the gesture's anchor.
-                if observedTarget != 0 { targetProcess = observedTarget }
-                return Unmanaged.passUnretained(event)
-            }
-            cancel()
+        // Pointer, button and key activity never discards a consumed notch.
+        guard type == .scrollWheel, !ScrollTransform.isSynthetic(event) else {
             return Unmanaged.passUnretained(event)
         }
         guard isEligible(event) else { return direct(event) }
@@ -82,12 +65,6 @@ final class ScrollEventProcessor {
               abs(pixels) <= ScrollSmoother.maximumDistance else { return direct(event) }
 
         if let previous = lastActivity, time < previous || time - previous >= 0.5 { cancel() }
-        let target = event.getIntegerValueField(.eventTargetUnixProcessID)
-        if direction != nil && (!isNearAnchor(event.location)
-            || event.flags.intersection(Self.contextModifiers) != flags.intersection(Self.contextModifiers)
-            || (target != 0 && targetProcess != 0 && target != targetProcess)) {
-            cancel()
-        }
         if let direction, direction != pixels.sign {
             // Discard the old direction before integrating or emitting anything.
             cancel()
@@ -98,13 +75,11 @@ final class ScrollEventProcessor {
         guard driver.start({ [weak self] in self?.frame() }),
               smoother.enqueue(delta: pixels, at: time) else { return direct(event) }
 
-        if direction == nil { location = event.location }
         direction = pixels.sign
         lastActivity = time
+        // Frames follow the latest notch, as the next native wheel event would.
+        location = event.location
         flags = event.flags
-        // A temporarily unavailable target must not erase the last known context.
-        if target != 0 { targetProcess = target }
-        latestWheelTimestamp = event.timestamp
         return nil
     }
 
@@ -113,8 +88,6 @@ final class ScrollEventProcessor {
         fractionalPixels = 0
         direction = nil
         lastActivity = nil
-        targetProcess = 0
-        latestWheelTimestamp = 0
         driver.stop()
     }
 
@@ -145,12 +118,6 @@ final class ScrollEventProcessor {
         if sample.delta != 0 { return Double(sample.delta) * 40 }
         // Some drivers provide only point distance, which is already in pixels.
         return sample.pointDelta
-    }
-
-    private func isNearAnchor(_ point: CGPoint) -> Bool {
-        let dx = point.x - location.x
-        let dy = point.y - location.y
-        return dx * dx + dy * dy <= 9 // Three display-coordinate units from origin.
     }
 
     private func frame() {

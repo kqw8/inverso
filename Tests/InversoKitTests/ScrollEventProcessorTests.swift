@@ -200,69 +200,58 @@ final class ScrollEventProcessorTests: XCTestCase {
         }
     }
 
-    func testContextChangesCancelAndLateFrameCannotPost() throws {
+    func testPointerButtonAndModifierEventsNeverDiscardAConsumedNotch() throws {
+        // A consumed notch must always be delivered: moving, clicking or pressing
+        // the wheel while scrolling is common, especially with a sensitive mouse.
         for type: CGEventType in [.mouseMoved, .leftMouseDown, .rightMouseDown,
                                   .otherMouseDown, .leftMouseUp, .rightMouseUp, .otherMouseUp,
                                   .leftMouseDragged, .rightMouseDragged,
                                   .otherMouseDragged, .flagsChanged] {
             let harness = Harness()
             _ = harness.processor.handle(type: .scrollWheel, event: try wheel(point: 40))
-            let staleFrame = try XCTUnwrap(harness.driver.frame)
             let event = try XCTUnwrap(CGEvent(source: nil))
             event.type = type
             event.location = CGPoint(x: 900, y: 900)
             XCTAssertTrue(harness.processor.handle(type: type, event: event)?.takeUnretainedValue() === event)
-            XCTAssertFalse(harness.driver.isRunning)
-            harness.time = 0.08
-            staleFrame()
-            XCTAssertTrue(harness.output.isEmpty)
+            XCTAssertTrue(harness.driver.isRunning, "\(type)")
+            harness.drain()
+            XCTAssertEqual(harness.pixels, -40, "\(type)")
         }
     }
 
-    func testSmallPointerJitterDoesNotSwallowAnEntireNotch() throws {
+    func testNotchesAtAnotherLocationOrTargetKeepAllDistance() throws {
+        for change in ["location", "target"] {
+            let harness = Harness()
+            let first = try wheel(point: 40)
+            first.location = CGPoint(x: 100, y: 100)
+            first.setIntegerValueField(.eventTargetUnixProcessID, value: 42)
+            _ = harness.processor.handle(type: .scrollWheel, event: first)
+            harness.time = 0.004
+            let second = try wheel(point: 40)
+            second.location = change == "location" ? CGPoint(x: 300, y: 300) : first.location
+            second.setIntegerValueField(.eventTargetUnixProcessID, value: change == "target" ? 43 : 42)
+            _ = harness.processor.handle(type: .scrollWheel, event: second)
+            harness.drain()
+            XCTAssertEqual(harness.pixels, -80, change)
+        }
+    }
+
+    func testFramesCarryTheLatestWheelLocationAndFlags() throws {
         let harness = Harness()
-        let input = try wheel(point: 40)
-        input.location = CGPoint(x: 100, y: 100)
-        _ = harness.processor.handle(type: .scrollWheel, event: input)
-        let motion = try XCTUnwrap(CGEvent(source: nil))
-        motion.type = .mouseMoved
-        motion.flags = []
-        motion.location = CGPoint(x: 101, y: 101)
+        let first = try wheel(point: 40)
+        first.location = CGPoint(x: 100, y: 100)
+        _ = harness.processor.handle(type: .scrollWheel, event: first)
         harness.time = 0.004
-        XCTAssertNotNil(harness.processor.handle(type: .mouseMoved, event: motion))
+        let second = try wheel(point: 40)
+        second.location = CGPoint(x: 102, y: 100)
+        second.flags = .maskNonCoalesced
+        _ = harness.processor.handle(type: .scrollWheel, event: second)
         harness.drain()
-        XCTAssertEqual(harness.pixels, -40)
-    }
-
-    func testPointerToleranceUsesGestureAnchorNotIndividualMovementSteps() throws {
-        let harness = Harness()
-        let input = try wheel(point: 40)
-        input.location = CGPoint(x: 100, y: 100)
-        _ = harness.processor.handle(type: .scrollWheel, event: input)
-        let motion = try XCTUnwrap(CGEvent(source: nil))
-        motion.type = .mouseMoved
-        motion.flags = []
-        for x in 101...104 {
-            motion.location = CGPoint(x: x, y: 100)
-            _ = harness.processor.handle(type: .mouseMoved, event: motion)
+        XCTAssertFalse(harness.output.isEmpty)
+        for output in harness.output {
+            XCTAssertEqual(output.location, second.location)
+            XCTAssertEqual(output.flags, second.flags)
         }
-        XCTAssertFalse(harness.driver.isRunning)
-        harness.drain()
-        XCTAssertTrue(harness.output.isEmpty)
-    }
-
-    func testDelayedOlderPassiveEventDoesNotCancelNewWheelInput() throws {
-        let harness = Harness()
-        let input = try wheel(point: 40)
-        input.timestamp = 200
-        _ = harness.processor.handle(type: .scrollWheel, event: input)
-        let olderMotion = try XCTUnwrap(CGEvent(source: nil))
-        olderMotion.type = .mouseMoved
-        olderMotion.timestamp = 100
-        olderMotion.location = CGPoint(x: 1_000, y: 1_000)
-        _ = harness.processor.handle(type: .mouseMoved, event: olderMotion)
-        harness.drain()
-        XCTAssertEqual(harness.pixels, -40)
     }
 
     func testNonContextFlagsDoNotDiscardAcceptedDistance() throws {
@@ -275,112 +264,6 @@ final class ScrollEventProcessorTests: XCTestCase {
         harness.drain()
         XCTAssertEqual(harness.pixels, -80)
         XCTAssertTrue(harness.output.allSatisfy { $0.flags == .maskNonCoalesced })
-    }
-
-    func testUnknownTargetsAreCompatibleWithKnownTargets() throws {
-        for targets: [Int64] in [[0, 42], [42, 0], [42, 0, 42]] {
-            let harness = Harness()
-            for (index, target) in targets.enumerated() {
-                harness.time = Double(index) * 0.001
-                let event = try wheel(point: 40)
-                event.setIntegerValueField(.eventTargetUnixProcessID, value: target)
-                _ = harness.processor.handle(type: .scrollWheel, event: event)
-            }
-            harness.drain()
-            XCTAssertEqual(harness.pixels, targets.count == 3 ? -120 : -80)
-        }
-    }
-
-    func testToleratedPointerObservationRemembersKnownTarget() throws {
-        for observedTargets: [Int64] in [[42], [42, 0]] {
-            let harness = Harness()
-            let first = try wheel(point: 40)
-            first.location = CGPoint(x: 100, y: 100)
-            first.timestamp = 100
-            first.setIntegerValueField(.eventTargetUnixProcessID, value: 0)
-            _ = harness.processor.handle(type: .scrollWheel, event: first)
-            for (index, target) in observedTargets.enumerated() {
-                let motion = try XCTUnwrap(CGEvent(source: nil))
-                motion.type = .mouseMoved
-                motion.location = CGPoint(x: 101, y: 100)
-                motion.flags = []
-                motion.timestamp = UInt64(200 + index)
-                motion.setIntegerValueField(.eventTargetUnixProcessID, value: target)
-                _ = harness.processor.handle(type: .mouseMoved, event: motion)
-            }
-            let next = try wheel(point: 40)
-            next.location = first.location
-            next.timestamp = 300
-            next.setIntegerValueField(.eventTargetUnixProcessID, value: 43)
-            _ = harness.processor.handle(type: .scrollWheel, event: next)
-            harness.drain()
-            XCTAssertEqual(harness.pixels, -40)
-        }
-    }
-
-    func testStalePointerObservationDoesNotAdoptATarget() throws {
-        let harness = Harness()
-        let first = try wheel(point: 40)
-        first.location = CGPoint(x: 100, y: 100)
-        first.timestamp = 200
-        first.setIntegerValueField(.eventTargetUnixProcessID, value: 0)
-        _ = harness.processor.handle(type: .scrollWheel, event: first)
-        let olderMotion = try XCTUnwrap(CGEvent(source: nil))
-        olderMotion.type = .mouseMoved
-        olderMotion.location = CGPoint(x: 101, y: 100)
-        olderMotion.flags = []
-        olderMotion.timestamp = 100
-        olderMotion.setIntegerValueField(.eventTargetUnixProcessID, value: 42)
-        _ = harness.processor.handle(type: .mouseMoved, event: olderMotion)
-        let next = try wheel(point: 40)
-        next.location = first.location
-        next.timestamp = 300
-        next.setIntegerValueField(.eventTargetUnixProcessID, value: 43)
-        _ = harness.processor.handle(type: .scrollWheel, event: next)
-        harness.drain()
-        XCTAssertEqual(harness.pixels, -80)
-    }
-
-    func testDifferentKnownTargetsCancelEvenAfterAnUnknownTarget() throws {
-        for targets: [Int64] in [[42, 43], [42, 0, 43]] {
-            let harness = Harness()
-            for (index, target) in targets.enumerated() {
-                harness.time = Double(index) * 0.001
-                let event = try wheel(point: 40)
-                event.setIntegerValueField(.eventTargetUnixProcessID, value: target)
-                _ = harness.processor.handle(type: .scrollWheel, event: event)
-            }
-            harness.drain()
-            XCTAssertEqual(harness.pixels, -40)
-        }
-    }
-
-    func testCancellationClearsRememberedTargetForANewUnknownGesture() throws {
-        let harness = Harness()
-        let old = try wheel(point: 40)
-        old.setIntegerValueField(.eventTargetUnixProcessID, value: 42)
-        _ = harness.processor.handle(type: .scrollWheel, event: old)
-        harness.processor.cancel()
-        _ = harness.processor.handle(type: .scrollWheel, event: try wheel(point: 40))
-        let next = try wheel(point: 40)
-        next.setIntegerValueField(.eventTargetUnixProcessID, value: 43)
-        _ = harness.processor.handle(type: .scrollWheel, event: next)
-        harness.drain()
-        XCTAssertEqual(harness.pixels, -80)
-    }
-
-    func testSettledFractionDoesNotLeakIntoAnotherLocation() throws {
-        let harness = Harness()
-        let first = try wheel(point: 0, fixed: 1.0 / 64)
-        first.location = CGPoint(x: 100, y: 100)
-        _ = harness.processor.handle(type: .scrollWheel, event: first)
-        harness.drain()
-        XCTAssertEqual(harness.pixels, 0)
-        let second = try wheel(point: 0, fixed: 1.0 / 64)
-        second.location = CGPoint(x: 300, y: 300)
-        _ = harness.processor.handle(type: .scrollWheel, event: second)
-        harness.drain()
-        XCTAssertEqual(harness.pixels, 0)
     }
 
     func testLongSchedulingGapDropsTailInsteadOfJumpingAfterWake() throws {

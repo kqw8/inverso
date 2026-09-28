@@ -46,24 +46,9 @@ final class EventTapServiceTests: XCTestCase {
         XCTAssertEqual(pixels, [-60, -80, -80])
     }
 
-    func testSmoothModeObservesContextChangesWithoutInterceptingKeys() {
-        let specs = SystemEventTapConnection.tapSpecifications(smoothingEnabled: true)
-        XCTAssertEqual(specs.count, 2)
-        XCTAssertEqual(specs[0].mask, CGEventMask(1 << CGEventType.scrollWheel.rawValue))
-        XCTAssertEqual(specs[0].options, .defaultTap)
-        XCTAssertEqual(specs[1].options, .listenOnly)
-        let mask = specs[1].mask
-        XCTAssertEqual(mask & CGEventMask(1 << CGEventType.scrollWheel.rawValue), 0)
-        for type: CGEventType in [.mouseMoved, .leftMouseDown, .rightMouseDown,
-                                  .otherMouseDown, .leftMouseUp, .rightMouseUp, .otherMouseUp,
-                                  .leftMouseDragged, .rightMouseDragged,
-                                  .otherMouseDragged, .flagsChanged] {
-            XCTAssertNotEqual(mask & CGEventMask(1 << type.rawValue), 0)
-        }
-        XCTAssertEqual(mask & CGEventMask(1 << CGEventType.keyDown.rawValue), 0)
-        let direct = SystemEventTapConnection.tapSpecifications(smoothingEnabled: false)
-        XCTAssertEqual(direct.count, 1)
-        XCTAssertEqual(direct[0].mask, CGEventMask(1 << CGEventType.scrollWheel.rawValue))
+    func testOnlyScrollWheelEventsReachTheDaemon() {
+        // Pointer, button and key events must never wait for or wake this daemon.
+        XCTAssertEqual(SystemEventTapConnection.eventMask, CGEventMask(1 << CGEventType.scrollWheel.rawValue))
     }
 
     func testServicePreservesSmoothingSuppressionAndCancelsOnDisable() throws {
@@ -278,21 +263,17 @@ final class EventTapServiceTests: XCTestCase {
         defer { service.stop() }
         try service.start()
         let tap = try XCTUnwrap(connection)
-        for type: CGEventType in [.scrollWheel, .mouseMoved] {
-            let event = try wheel()
-            event.type = type
-            event.setIntegerValueField(.scrollWheelEventScrollPhase, value: 2)
-            // Core Graphics clears scroll fields when changing to a mouse event.
-            let before = ScrollTransform.verticalSample(from: event)
-            let done = DispatchSemaphore(value: 0)
-            var returnedSame = false
-            tap.enqueue(type, event: event, inspect: { returned in
-                returnedSame = returned === event
-            }) { done.signal() }
-            XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
-            XCTAssertTrue(returnedSame)
-            XCTAssertEqual(ScrollTransform.verticalSample(from: event), before)
-        }
+        let event = try wheel()
+        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: 2)
+        let before = ScrollTransform.verticalSample(from: event)
+        let done = DispatchSemaphore(value: 0)
+        var returnedSame = false
+        tap.enqueue(.scrollWheel, event: event, inspect: { returned in
+            returnedSame = returned === event
+        }) { done.signal() }
+        XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
+        XCTAssertTrue(returnedSame)
+        XCTAssertEqual(ScrollTransform.verticalSample(from: event), before)
     }
 
     func testStopIsIdempotentAndCanRestart() throws {
