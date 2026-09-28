@@ -9,40 +9,20 @@ Requires macOS 13 or later. Source builds require Swift 6.4 or later.
 
 ## Install
 
-### Quick install
-
-No Xcode required. This downloads the latest universal binary from GitHub Releases, verifies its checksum, and installs it to `/usr/local/bin`:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/kqw8/Inverso/main/scripts/install.sh | bash
-```
-
-Then start the background service:
+Build from this checkout, then copy the executable to a stable location before
+registering the service:
 
 ```sh
-inverso install
-inverso install --smooth
-inverso install --no-smooth
-```
-
-### Build from source
-
-For local changes, build and copy the executable to a stable location before registering the service:
-
-```sh
-git clone https://github.com/kqw8/Inverso.git
-cd Inverso
 swift build -c release
-INVERSO_BUILD_DIR="$(swift build -c release --show-bin-path)"
-mkdir -p "$HOME/.local/bin"
-install -m 755 "$INVERSO_BUILD_DIR/inverso" "$HOME/.local/bin/inverso"
-"$HOME/.local/bin/inverso" install
+sudo install -m 755 "$(swift build -c release --show-bin-path)/inverso" /usr/local/bin/inverso
+inverso install
 ```
 
-Add `~/.local/bin` to your `PATH`, or use the full executable path for the commands below.
-The LaunchAgent stores the executable's absolute path. Registering a binary inside `.build`
-would make the service stop working after that directory is cleaned. After rebuilding,
-copy the new binary and run its `install` command again to reload the service.
+`inverso install` registers the LaunchAgent with the executable's absolute path and
+starts it; `install --smooth` / `install --no-smooth` select the mode. Registering a
+binary inside `.build` would make the service stop working after that directory is
+cleaned. After rebuilding, copy the new binary and run `inverso install` again to
+reload the service.
 
 ## Commands
 
@@ -172,12 +152,10 @@ Inverso handles ordinary physical mouse-wheel events. Trackpad-like events are p
 
 ```sh
 swift test
-bash scripts/test-install.sh
 bash scripts/benchmark.sh
 ```
 
-The Swift tests require an Xcode toolchain with XCTest. Installer tests use temporary
-files and mocked downloads/sudo; they never install or execute a downloaded binary.
+The Swift tests require an Xcode toolchain with XCTest.
 Tests cover event filtering, delta preservation, permission loss/recovery, instance
 locking, plist serialization, and launchctl failure handling without changing the
 real background service. Physical-device behavior still needs manual checks:
