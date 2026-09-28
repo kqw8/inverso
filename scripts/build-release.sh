@@ -3,12 +3,15 @@
 # Build a universal binary (arm64 + x86_64) for GitHub Releases.
 #
 # Usage:
-#   scripts/build-release.sh v0.2.0
+#   scripts/build-release.sh v0.3.2
+#
+# Artifacts go to release/<version>/. Other versions are kept: one of them may
+# be the rollback copy of the installed binary.
 #
 # To cut a release:
-#   scripts/build-release.sh v0.2.0
-#   gh release create v0.2.0 release/inverso-v0.2.0-universal.tar.gz release/checksums.txt \
-#     --title "Inverso v0.2.0" --notes "..."
+#   scripts/build-release.sh v0.3.2
+#   gh release create v0.3.2 release/v0.3.2/inverso-v0.3.2-universal.tar.gz release/v0.3.2/checksums.txt \
+#     --title "Inverso v0.3.2" --notes "..."
 #
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -16,7 +19,7 @@ cd "$(dirname "$0")/.."
 VERSION="${1:-dev}"
 NAME="inverso"
 DEPLOY="13.0"
-OUT="release"
+OUT="release/$VERSION"
 
 build_arch() {
   local arch="$1"

@@ -15,17 +15,10 @@ public struct ScrollSample: Equatable {
     public var hasValue: Bool {
         delta != 0 || pointDelta != 0.0 || fixedPointDelta != 0.0
     }
-
-    public func usableValue(lineScale: Double) -> Double {
-        if pointDelta != 0.0 { return pointDelta }
-        if fixedPointDelta != 0.0 { return fixedPointDelta }
-        return Double(delta) * lineScale
-    }
 }
 
 public enum ScrollTransform {
     public static let syntheticMarker: Int64 = 0x00494E56524552534F
-    public static let defaultLineScale = 12.0
 
     public static func verticalSample(from event: CGEvent) -> ScrollSample {
         ScrollSample(
@@ -43,10 +36,6 @@ public enum ScrollTransform {
         )
     }
 
-    public static func verticalDelta(from event: CGEvent, lineScale: Double = defaultLineScale) -> Double {
-        verticalSample(from: event).usableValue(lineScale: lineScale)
-    }
-
     public static func hasHorizontalDelta(_ event: CGEvent) -> Bool {
         horizontalSample(from: event).hasValue
     }
@@ -55,22 +44,12 @@ public enum ScrollTransform {
         event.getIntegerValueField(.eventSourceUserData) == syntheticMarker
     }
 
-    public static func markSynthetic(_ event: CGEvent) {
-        event.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
-    }
-
     public static func isLikelyTrackpad(_ event: CGEvent) -> Bool {
         // Do not use isContinuous as a device identifier: mouse drivers can
         // produce pixel-based wheel events too. This remains a heuristic.
         event.getIntegerValueField(.scrollWheelEventScrollPhase) != 0
             || event.getIntegerValueField(.scrollWheelEventMomentumPhase) != 0
             || event.getIntegerValueField(.scrollWheelEventScrollCount) != 0
-    }
-
-    public static func clearVerticalFields(on event: CGEvent) {
-        event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: 0)
-        event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: 0.0)
-        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: 0.0)
     }
 
     public static func reverseVerticalFields(on event: CGEvent) {
@@ -93,11 +72,5 @@ public enum ScrollTransform {
         }
         reverseVerticalFields(on: event)
         return true
-    }
-
-    public static func setVerticalFields(on event: CGEvent, value: Double) {
-        event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: Int64(value.rounded(.towardZero)))
-        event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: value)
-        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: value)
     }
 }

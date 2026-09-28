@@ -209,20 +209,6 @@ public enum LaunchAgent {
         return nil
     }
 
-    // Compatibility helpers. CLI commands use the throwing APIs to retain diagnostics.
-    @discardableResult
-    public static func bootstrap() -> Bool { (try? loadService()) != nil }
-    @discardableResult
-    public static func bootout() -> Bool { (try? unloadService()) != nil }
-    @discardableResult
-    public static func kickstart() -> Bool { (try? restartService()) != nil }
-    @discardableResult
-    public static func enableLogin() -> Bool { (try? setLoginEnabled(true)) != nil }
-    @discardableResult
-    public static func disableLogin() -> Bool { (try? setLoginEnabled(false)) != nil }
-    public static func isBootstrapped() -> Bool { (try? serviceStatus().isLoaded) ?? false }
-    public static func isLoginEnabled() -> Bool { (try? loginEnabled()) ?? false }
-
     private static func execute(_ arguments: [String], using run: CommandRunner) throws {
         try requireSuccess(run(arguments), arguments: arguments)
     }

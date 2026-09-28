@@ -3,29 +3,6 @@ import InversoKit
 import XCTest
 
 final class ScrollTransformTests: XCTestCase {
-    func testVerticalDeltaPrefersPointDelta() throws {
-        let event = try makeEvent(delta: 2, point: 7.0, fixed: 3.0)
-        XCTAssertEqual(ScrollTransform.verticalDelta(from: event), 7.0)
-    }
-
-    func testVerticalDeltaFallsBackToFixedPoint() throws {
-        let event = try makeEvent(delta: 2, point: 0.0, fixed: 3.5)
-        XCTAssertEqual(ScrollTransform.verticalDelta(from: event), 3.5)
-    }
-
-    func testVerticalDeltaFallsBackToLineScaledDelta() throws {
-        let event = try makeEvent(delta: 2, point: 0.0, fixed: 0.0)
-        XCTAssertEqual(ScrollTransform.verticalDelta(from: event, lineScale: 12.0), 24.0)
-    }
-
-    func testSetVerticalFieldsWritesAllVerticalFields() throws {
-        let event = try makeEvent()
-        ScrollTransform.setVerticalFields(on: event, value: -5.5)
-        XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventDeltaAxis1), -5)
-        XCTAssertEqual(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1), -5.0)
-        XCTAssertEqual(event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1), -5.5)
-    }
-
     func testReverseVerticalFieldsNegatesOnlyVerticalFields() throws {
         let event = try makeEvent(delta: 4, point: 8.0, fixed: 2.0, horizontalDelta: 3, horizontalPoint: 6.0)
         ScrollTransform.reverseVerticalFields(on: event)
@@ -36,19 +13,10 @@ final class ScrollTransformTests: XCTestCase {
         XCTAssertEqual(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2), 6.0)
     }
 
-    func testClearVerticalFieldsDoesNotClearHorizontalFields() throws {
-        let event = try makeEvent(delta: 4, point: 8.0, fixed: 2.0, horizontalDelta: 3, horizontalPoint: 6.0)
-        ScrollTransform.clearVerticalFields(on: event)
-        XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventDeltaAxis1), 0)
-        XCTAssertEqual(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1), 0.0)
-        XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventDeltaAxis2), 3)
-        XCTAssertEqual(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2), 6.0)
-    }
-
-    func testSyntheticMarkerRoundTrips() throws {
+    func testSyntheticMarkerIsRecognized() throws {
         let event = try makeEvent()
         XCTAssertFalse(ScrollTransform.isSynthetic(event))
-        ScrollTransform.markSynthetic(event)
+        event.setIntegerValueField(.eventSourceUserData, value: ScrollTransform.syntheticMarker)
         XCTAssertTrue(ScrollTransform.isSynthetic(event))
     }
 
@@ -101,7 +69,7 @@ final class ScrollTransformTests: XCTestCase {
     func testMarkedAndNonScrollEventsAreIgnored() throws {
         let event = try makeEvent(delta: 2, point: 7, fixed: 1.5)
         let before = ScrollTransform.verticalSample(from: event)
-        ScrollTransform.markSynthetic(event)
+        event.setIntegerValueField(.eventSourceUserData, value: ScrollTransform.syntheticMarker)
         XCTAssertFalse(ScrollTransform.reverseMouseWheelEvent(event))
         XCTAssertEqual(ScrollTransform.verticalSample(from: event), before)
         event.setIntegerValueField(.eventSourceUserData, value: 0)
