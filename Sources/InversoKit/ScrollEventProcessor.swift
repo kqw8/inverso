@@ -30,7 +30,9 @@ final class ScrollEventProcessor {
         if Self.isValidSpeed(speedMultiplier) { self.speedMultiplier = speedMultiplier }
     }
 
-    static func production(speedMultiplier: Double = 1) -> ScrollEventProcessor {
+    /// Nil when no event source is available; the caller keeps direct reversal.
+    static func production(speedMultiplier: Double = 1) -> ScrollEventProcessor? {
+        guard let events = PixelEventFactory() else { return nil }
         // Unlike uptime, this clock advances during sleep so stale tails expire.
         let origin = ContinuousClock.now
         return ScrollEventProcessor(driver: RunLoopSmoothingDriver(),
@@ -38,7 +40,7 @@ final class ScrollEventProcessor {
                 let elapsed = origin.duration(to: .now).components
                 return Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
             },
-            makeEvent: { makePixelEvent(pixels: $0) },
+            makeEvent: { events.make(pixels: $0) },
             post: { $0.post(tap: .cgSessionEventTap) }, speedMultiplier: speedMultiplier)
     }
 
@@ -91,9 +93,9 @@ final class ScrollEventProcessor {
             cancel()
         }
 
-        // Check both prerequisites before consuming the user's physical input.
-        guard makeEvent(0) != nil,
-              driver.start({ [weak self] in self?.frame() }),
+        // Start the driver before consuming the user's physical input. Events are
+        // created only by frames: this callback must never wait for WindowServer.
+        guard driver.start({ [weak self] in self?.frame() }),
               smoother.enqueue(delta: pixels, at: time) else { return direct(event) }
 
         if direction == nil { location = event.location }
@@ -179,14 +181,6 @@ final class ScrollEventProcessor {
             post(event)
         }
         if !smoother.isActive { driver.stop() }
-    }
-
-    static func makePixelEvent(pixels: Int32) -> CGEvent? {
-        guard let source = CGEventSource(stateID: .privateState) else { return nil }
-        // Mark the new source once. Re-marking copied vendor events is unreliable.
-        source.userData = ScrollTransform.syntheticMarker
-        return CGEvent(scrollWheelEvent2Source: source, units: .pixel,
-                       wheelCount: 1, wheel1: pixels, wheel2: 0, wheel3: 0)
     }
 
     deinit { driver.stop() }

@@ -26,6 +26,15 @@ final class ScrollEventProcessorTests: XCTestCase {
         }
     }
 
+    func testWheelCallbackCreatesNoEvents() throws {
+        // Event creation can call WindowServer, which is waiting for this callback.
+        let harness = Harness()
+        XCTAssertNil(harness.processor.handle(type: .scrollWheel, event: try wheel(point: 40)))
+        XCTAssertEqual(harness.eventsCreated, 0)
+        harness.drain()
+        XCTAssertEqual(harness.pixels, -40)
+    }
+
     func testOnePixelIsNotLostAcrossManyFractionalFrames() throws {
         let harness = Harness()
         XCTAssertNil(harness.processor.handle(type: .scrollWheel, event: try wheel(point: 1)))
@@ -382,17 +391,23 @@ final class ScrollEventProcessorTests: XCTestCase {
         XCTAssertFalse(harness.driver.isRunning)
     }
 
-    func testAllocationAndDriverFailureFallBackBeforeSuppressingInput() throws {
-        for failAllocation in [true, false] {
-            let harness = Harness()
-            harness.failAllocation = failAllocation
-            harness.driver.canStart = failAllocation
-            let event = try wheel(point: 40)
-            XCTAssertNotNil(harness.processor.handle(type: .scrollWheel, event: event))
-            XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1), -40)
-            XCTAssertFalse(harness.driver.isRunning)
-            XCTAssertTrue(harness.output.isEmpty)
-        }
+    func testDriverFailureFallsBackBeforeSuppressingInput() throws {
+        let harness = Harness()
+        harness.driver.canStart = false
+        let event = try wheel(point: 40)
+        XCTAssertNotNil(harness.processor.handle(type: .scrollWheel, event: event))
+        XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1), -40)
+        XCTAssertFalse(harness.driver.isRunning)
+        XCTAssertTrue(harness.output.isEmpty)
+    }
+
+    func testFrameAllocationFailureStopsWithoutPosting() throws {
+        let harness = Harness()
+        XCTAssertNil(harness.processor.handle(type: .scrollWheel, event: try wheel(point: 40)))
+        harness.failAllocation = true
+        harness.drain()
+        XCTAssertTrue(harness.output.isEmpty)
+        XCTAssertFalse(harness.driver.isRunning)
     }
 
     func testExplicitCancelStopsAndAllowsNextGesture() throws {
@@ -419,17 +434,20 @@ final class ScrollEventProcessorTests: XCTestCase {
     }
 
     private final class Harness {
+        static let events = PixelEventFactory()
         let driver = Driver()
         var time = 0.0
         var output: [CGEvent] = []
         var failAllocation = false
+        var eventsCreated = 0
         let speedMultiplier: Double
 
         init(speedMultiplier: Double = 1) { self.speedMultiplier = speedMultiplier }
 
         lazy var processor = ScrollEventProcessor(driver: driver, now: { [unowned self] in time },
             makeEvent: { [unowned self] pixels in
-                failAllocation ? nil : ScrollEventProcessor.makePixelEvent(pixels: pixels)
+                eventsCreated += 1
+                return failAllocation ? nil : Harness.events?.make(pixels: pixels)
             }, post: { [unowned self] in output.append($0) }, speedMultiplier: speedMultiplier)
 
         var pixels: Int64 { output.reduce(0) { $0 + $1.getIntegerValueField(.scrollWheelEventPointDeltaAxis1) } }
