@@ -1,7 +1,7 @@
 # Inverso
 
-`inverso` is a small macOS CLI daemon that reverses and smooths a physical mouse
-wheel while leaving trackpad-like scrolling alone.
+`inverso` is a small macOS CLI daemon that reverses a physical mouse wheel while
+leaving trackpad-like scrolling alone.
 
 It is intentionally not a menu bar app. Install it once, let launchd keep it running, and control it from the terminal.
 
@@ -19,9 +19,8 @@ inverso install
 ```
 
 `inverso install` registers the LaunchAgent with the executable's absolute path and
-starts it; `install --smooth` / `install --no-smooth` select the mode. Registering a
-binary inside `.build` would make the service stop working after that directory is
-cleaned. After rebuilding, copy the new binary and run `inverso install` again to
+starts it. Registering a binary inside `.build` would make the service stop working
+after that directory is cleaned. After rebuilding, copy the new binary and run `inverso install` again to
 reload the service.
 
 ## Commands
@@ -29,28 +28,13 @@ reload the service.
 ```sh
 inverso install
 inverso status
-inverso speed
-inverso speed 1.5
 inverso permission
 inverso stop
 inverso start
 inverso uninstall
 ```
 
-`install` enables start-at-login by default.
-New installations enable smooth scrolling. Bare `install` preserves an existing
-mode; `install --smooth` enables it explicitly and `install --no-smooth` selects
-immediate reversal without interpolation. These commands reload the service.
-`status` reports the configured mode, which may differ from an older running binary
-until it is replaced and the service reinstalled.
-
-`speed` shows the smooth-scroll distance multiplier. `speed 1.5` makes each eligible
-wheel movement travel 50% farther than the normal `1.0` setting; `speed 1` restores
-normal distance. Values from `0.25` to `4` are supported. A running 0.3.1+ daemon
-loads the setting at its next health check, normally about five seconds later.
-Changing speed does not restart the daemon or change its executable/signature.
-The setting is stored in `~/Library/Application Support/Inverso/settings.json`
-and is retained by `uninstall`. Direct mode and native trackpad scrolling are not scaled.
+`install` enables start-at-login and reloads the service.
 `stop` unloads the service for the current session; it can start again at the next login.
 `start` enables start-at-login and starts/restarts the service. `uninstall` stops it,
 disables start-at-login, and removes its LaunchAgent and logs; the binary stays in place.
@@ -104,38 +88,18 @@ invalid one and resumes when permission returns.
 Repeated identical failures are logged once until the state changes. Status lines
 from the running daemon start with a local timestamp, and the health check reports
 when and how often macOS disabled the tap (after a slow callback or because of user
-input). If smooth mode cannot create its event source, wheel input is reversed
-directly and smoothing is retried at each health check.
+input).
 Logs are in `~/Library/Logs/inverso.err.log` and `~/Library/Logs/inverso.out.log`.
 
 ## Notes
 
 Inverso handles ordinary physical mouse-wheel events. Trackpad-like events are passed through unchanged.
 
-- Smooth mode turns unmodified, vertical-only, discrete wheel input into continuous
-  pixel scrolling. A critically damped response uses elapsed time, settles its tail
-  about 80 ms after the last input, and preserves fractional distance across frames.
-  The 120 Hz frame timer stops when idle; it is not a mouse polling loop or a promise
-  of display synchronization on every monitor.
-- Synthetic events share one event source, created with the smoothing processor
-  rather than per event. The scroll callback itself never calls WindowServer, which
-  is waiting for its answer.
-- A notch that smooth mode has taken over is always delivered: pointer movement,
-  clicks, dragging, modifier keys and wheel events without vertical distance never
-  discard it. Only a direction change, a speed change, a stall of 0.5 s or more,
-  macOS disabling the tap, or vertical wheel input that smooth mode leaves to direct
-  reversal (trackpad or native gestures, already-continuous wheels, modified or
-  mixed-axis input) ends the remaining tail early.
+- Each wheel event is reversed in place and returned immediately: no new events,
+  timers or WindowServer calls. Its timing, scroll curve, location and modifiers
+  stay exactly as the mouse produced them.
 - Inverso taps scroll-wheel events only; pointer movement, clicks and keys never pass
   through it.
-- Already-continuous wheels, modified input and mixed-axis events use direct
-  reversal, avoiding double smoothing and preserving shortcut behavior.
-- Discrete wheel input uses fractional line distance × 40, matching Chromium's
-  wheel-to-pixel convention; rounded integer lines are the fallback, followed by
-  point-only input when neither line representation exists. This preserves
-  fractional acceleration without assuming a discrete CG point is a screen pixel.
-  Other applications may use different line heights; use `speed` to tune the feel.
-- Direct mode preserves the original event's timing and scroll curve.
 - Only vertical deltas are reversed; horizontal deltas and modifier keys are preserved.
 - Detection uses scroll phase, momentum phase, and scroll count. It is a heuristic,
   not hardware identification. Pixel-based scrolling alone is not excluded because
@@ -146,6 +110,8 @@ Inverso handles ordinary physical mouse-wheel events. Trackpad-like events are p
   to preserve the lock identity; it does not mean a daemon is still running. A second
   daemon started by launchd waits for the first to exit instead of being relaunched
   every ten seconds; a manual `inverso --daemon` in a terminal exits immediately.
+- A LaunchAgent written by 0.3 still passes `--smooth` or `--no-smooth`; the daemon
+  accepts and ignores it. Run `inverso install` to rewrite it.
 - Other scrolling utilities can also reverse events. Enable reversal in only one tool.
 
 ## Development checks
@@ -169,22 +135,14 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swift test
 
 Tests also exercise a real dedicated run loop while the caller is blocked, callback
 recovery, resource cleanup, concurrent control operations, and mixed-event stress.
-A regression test counts the test process's read-only shared memory regions to prove
-that synthetic scroll events share one event source.
-Smoothing tests inject a clock, frame driver and output sink; they do not post events
-to the desktop. Actual CoreGraphics event-source fixtures need an interactive macOS
-session and may be unavailable inside a restricted sandbox.
+Tests never post events to the desktop.
 The benchmark compiles the production transform with optimization and measures
-unposted synthetic events. It never takes over the mouse or asks for permissions.
+unposted in-memory events. It never takes over the mouse or asks for permissions.
 Its numbers measure processing cost, not end-to-end hardware or display latency.
 
-Version 0.3.1 corrects the short wheel distance in 0.3.0 and adds live speed tuning.
-See the [distance correction record](docs/research/2026-09-24-scroll-speed.md).
-
-Version 0.3.2 fixes intermittent scroll freezes and vanished notches in smooth mode:
-0.3.1 created a WindowServer event source for every synthetic event (1.7 GB after four
-days of use) and discarded consumed notches when the pointer moved.
-See the [scroll freeze record](docs/research/2026-09-28-scroll-freeze.md).
+Version 0.4.0 removes the smooth scrolling added in 0.3: Inverso only reverses
+wheel events in place again. The [scroll freeze record](docs/research/2026-09-28-scroll-freeze.md)
+explains how that layer caused freezes and, in 0.3.1, 1.7 GB of leaked memory.
 
 See the [source study](docs/research/2026-09-24-scrolling.md) and
 [validation record](docs/research/2026-09-24-validation.md) for trade-offs,

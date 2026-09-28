@@ -18,8 +18,6 @@ public struct ScrollSample: Equatable {
 }
 
 public enum ScrollTransform {
-    public static let syntheticMarker: Int64 = 0x00494E56524552534F
-
     public static func verticalSample(from event: CGEvent) -> ScrollSample {
         ScrollSample(
             delta: event.getIntegerValueField(.scrollWheelEventDeltaAxis1),
@@ -34,14 +32,6 @@ public enum ScrollTransform {
             pointDelta: event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2),
             fixedPointDelta: event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2)
         )
-    }
-
-    public static func hasHorizontalDelta(_ event: CGEvent) -> Bool {
-        horizontalSample(from: event).hasValue
-    }
-
-    public static func isSynthetic(_ event: CGEvent) -> Bool {
-        event.getIntegerValueField(.eventSourceUserData) == syntheticMarker
     }
 
     public static func isLikelyTrackpad(_ event: CGEvent) -> Bool {
@@ -65,7 +55,6 @@ public enum ScrollTransform {
     @discardableResult
     public static func reverseMouseWheelEvent(_ event: CGEvent) -> Bool {
         guard event.type == .scrollWheel,
-              !isSynthetic(event),
               !isLikelyTrackpad(event),
               verticalSample(from: event).hasValue else {
             return false

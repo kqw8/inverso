@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import InversoKit
 
-let inversoVersion = "0.3.2"
+let inversoVersion = "0.4.0"
 
 func currentExecutablePath() -> String {
     var size: UInt32 = 0
@@ -23,32 +23,20 @@ func usage() {
     inverso \(inversoVersion)
 
     Usage:
-      inverso install [--smooth | --no-smooth]
-                           Install and start the service, enabled at login
+      inverso install      Install and start the service, enabled at login
       inverso uninstall    Stop the service and remove LaunchAgent/logs
       inverso start        Start the background service
       inverso stop         Stop the background service until next login/start
       inverso status       Show service and permission state
-      inverso speed [factor]
-                           Show or save smooth-scroll speed (0.25...4; 1.0x is normal)
       inverso permission   Ask macOS for Accessibility permission
-      inverso --daemon [--smooth | --no-smooth]
-                           Run the background event tap
-
-    Smoothing defaults to on. Bare install preserves the existing smoothing setting.
-    Use install --no-smooth for immediate wheel reversal, or install --smooth to enable smoothing.
-    Speed changes normally apply to a running service in about 5 seconds; no restart is needed.
+      inverso --daemon     Run the background event tap
     """)
 }
 
-func install(smoothingEnabled requested: Bool?) {
-    let smoothingEnabled: Bool
+func install() {
     do {
-        // Read a saved preference before unloading; explicit flags can replace
-        // an invalid old configuration without having to read its setting.
-        smoothingEnabled = try requested ?? LaunchAgent.smoothingEnabled()
         try LaunchAgent.unloadService()
-        try LaunchAgent.writePlist(executablePath: currentExecutablePath(), smoothingEnabled: smoothingEnabled)
+        try LaunchAgent.writePlist(executablePath: currentExecutablePath())
         try LaunchAgent.setLoginEnabled(true)
         try LaunchAgent.loadService()
     } catch {
@@ -57,7 +45,6 @@ func install(smoothingEnabled requested: Bool?) {
     }
     print("✅ Inverso installed; background service loaded.")
     print("   • Start at login: on")
-    print("   • Smooth scrolling: \(smoothingEnabled ? "on" : "off")")
     print("   Run inverso status to check the process and scroll event tap.")
 }
 
@@ -145,43 +132,10 @@ func status() {
         printErr("   \(error)")
         queryFailed = true
     }
-    if LaunchAgent.plistExists() {
-        do {
-            print("  • Smooth scrolling (configured): \(try LaunchAgent.smoothingEnabled() ? "on" : "off")")
-        } catch {
-            print("  • Smooth scrolling (configured): unknown")
-            printErr("   \(error)")
-            queryFailed = true
-        }
-    } else {
-        print("  • Smooth scrolling (configured): not installed (default: on)")
-    }
-    do {
-        print("  • Scroll speed (configured): \(try ScrollSettingsStore.load().speedMultiplier)x")
-    } catch {
-        print("  • Scroll speed (configured): unknown")
-        printErr("   \(error)")
-        queryFailed = true
-    }
     print("")
     print("LaunchAgent:")
     print("  • \(LaunchAgent.plistURL.path)")
     if queryFailed { exit(1) }
-}
-
-func speed(multiplier: Double?) {
-    do {
-        if let multiplier {
-            try ScrollSettingsStore.save(ScrollSettings(speedMultiplier: multiplier))
-            print("Smooth-scroll speed saved: \(multiplier)x")
-            print("A running service applies the setting at its next health check (normally about 5 seconds).")
-        } else {
-            print("Smooth-scroll speed: \(try ScrollSettingsStore.load().speedMultiplier)x (1.0x is normal)")
-        }
-    } catch {
-        printErr("inverso: Could not \(multiplier == nil ? "read" : "save") scroll speed: \(error)")
-        exit(1)
-    }
 }
 
 func requestPermission() {
@@ -225,15 +179,15 @@ do {
 }
 
 switch command {
-case .daemon(let smoothingEnabled):
+case .daemon:
     do {
-        try DaemonRunner(smoothingEnabled: smoothingEnabled).run()
+        try DaemonRunner().run()
     } catch {
         printErr("inverso: \(error)")
         exit(1)
     }
-case .install(let smoothingEnabled):
-    install(smoothingEnabled: smoothingEnabled)
+case .install:
+    install()
 case .uninstall:
     uninstall()
 case .start:
@@ -242,8 +196,6 @@ case .stop:
     stop()
 case .status:
     status()
-case .speed(let multiplier):
-    speed(multiplier: multiplier)
 case .permission:
     requestPermission()
 case .version:

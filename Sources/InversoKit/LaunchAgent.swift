@@ -35,15 +35,15 @@ public enum LaunchAgent {
         return ["inverso.out.log", "inverso.err.log"].map { directory.appendingPathComponent($0).path }
     }
 
-    public static func plistContents(executablePath: String, smoothingEnabled: Bool = true) -> String {
-        plistContents(executablePath: executablePath, smoothingEnabled: smoothingEnabled, homeDirectory: homeDirectory)
+    public static func plistContents(executablePath: String) -> String {
+        plistContents(executablePath: executablePath, homeDirectory: homeDirectory)
     }
 
-    static func plistContents(executablePath: String, smoothingEnabled: Bool = true, homeDirectory: URL) -> String {
+    static func plistContents(executablePath: String, homeDirectory: URL) -> String {
         let logs = logPaths(in: homeDirectory)
         let plist: [String: Any] = [
             "Label": label,
-            "ProgramArguments": [executablePath, "--daemon"] + (smoothingEnabled ? [] : ["--no-smooth"]),
+            "ProgramArguments": [executablePath, "--daemon"],
             "RunAtLoad": true,
             "KeepAlive": true,
             // This synchronous input filter must not be background-throttled.
@@ -57,42 +57,18 @@ public enum LaunchAgent {
     }
 
     @discardableResult
-    public static func writePlist(executablePath: String, smoothingEnabled: Bool = true) throws -> URL {
-        try writePlist(executablePath: executablePath, smoothingEnabled: smoothingEnabled, homeDirectory: homeDirectory)
+    public static func writePlist(executablePath: String) throws -> URL {
+        try writePlist(executablePath: executablePath, homeDirectory: homeDirectory)
     }
 
     @discardableResult
-    static func writePlist(executablePath: String, smoothingEnabled: Bool = true, homeDirectory: URL) throws -> URL {
+    static func writePlist(executablePath: String, homeDirectory: URL) throws -> URL {
         let url = plistURL(in: homeDirectory)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: homeDirectory.appendingPathComponent("Library/Logs"), withIntermediateDirectories: true)
-        try plistContents(executablePath: executablePath, smoothingEnabled: smoothingEnabled, homeDirectory: homeDirectory)
+        try plistContents(executablePath: executablePath, homeDirectory: homeDirectory)
             .write(to: url, atomically: true, encoding: .utf8)
         return url
-    }
-
-    /// Read only, so a malformed existing configuration is rejected before unload.
-    public static func smoothingEnabled() throws -> Bool {
-        try smoothingEnabled(homeDirectory: homeDirectory)
-    }
-
-    static func smoothingEnabled(homeDirectory: URL) throws -> Bool {
-        let url = plistURL(in: homeDirectory)
-        let data: Data
-        do {
-            data = try Data(contentsOf: url)
-        } catch CocoaError.fileReadNoSuchFile {
-            return true
-        }
-        guard let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              plist["Label"] as? String == label,
-              let arguments = plist["ProgramArguments"] as? [String],
-              let executable = arguments.first, !executable.isEmpty,
-              let options = try? CLIOptions(arguments: Array(arguments.dropFirst())),
-              case .daemon(let enabled) = options else {
-            throw Failure(description: "Cannot read the smoothing setting from \(url.path). Reinstall with --smooth or --no-smooth.")
-        }
-        return enabled
     }
 
     @discardableResult

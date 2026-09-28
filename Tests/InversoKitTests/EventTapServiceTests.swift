@@ -3,127 +3,9 @@ import CoreGraphics
 import XCTest
 
 final class EventTapServiceTests: XCTestCase {
-    func testSpeedAppliesLiveAndSurvivesTapRecreation() throws {
-        var connections: [TestConnection] = []
-        let driver = TestFrameDriver()
-        var time = 0.0
-        var pixels: [Int64] = []
-        let service = EventTapService(permissionGranted: { true }, makeConnection: { handler in
-            let tap = TestConnection(handler: handler)
-            connections.append(tap)
-            return tap
-        }, makeProcessor: {
-            ScrollEventProcessor(driver: driver, now: { time }, makeEvent: { pixels in
-                CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
-                        wheel1: pixels, wheel2: 0, wheel3: 0)
-            }, post: { pixels.append($0.getIntegerValueField(.scrollWheelEventPointDeltaAxis1)) })
-        })
-        defer { service.stop() }
-
-        func scrollOneNotch() throws {
-            let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line,
-                                             wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0))
-            event.flags = []
-            let completed = DispatchSemaphore(value: 0)
-            connections.last!.enqueue(.scrollWheel, event: event) {
-                time += 0.1
-                driver.frame?()
-                completed.signal()
-            }
-            XCTAssertEqual(completed.wait(timeout: .now() + 2), .success)
-        }
-
-        service.setScrollSpeed(1.5)
-        try service.start()
-        try scrollOneNotch()
-        service.setScrollSpeed(2)
-        try scrollOneNotch()
-        XCTAssertEqual(connections.count, 1)
-        service.stop()
-        try service.start()
-        try scrollOneNotch()
-        XCTAssertEqual(connections.count, 2)
-        XCTAssertEqual(pixels, [-60, -80, -80])
-    }
-
     func testOnlyScrollWheelEventsReachTheDaemon() {
         // Pointer, button and key events must never wait for or wake this daemon.
         XCTAssertEqual(SystemEventTapConnection.eventMask, CGEventMask(1 << CGEventType.scrollWheel.rawValue))
-    }
-
-    func testServicePreservesSmoothingSuppressionAndCancelsOnDisable() throws {
-        var connection: TestConnection?
-        let driver = TestFrameDriver()
-        var posted = 0
-        let service = EventTapService(permissionGranted: { true }, makeConnection: { handler in
-            let tap = TestConnection(handler: handler)
-            connection = tap
-            return tap
-        }, makeProcessor: {
-            ScrollEventProcessor(driver: driver, now: { 0 }, makeEvent: { pixels in
-                CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
-                        wheel1: pixels, wheel2: 0, wheel3: 0)
-            }, post: { _ in posted += 1 })
-        })
-        defer { service.stop() }
-        try service.start()
-        let tap = try XCTUnwrap(connection)
-        let wheelDelivered = DispatchSemaphore(value: 0)
-        var suppressed = false
-        let event = try wheel()
-        event.flags = []
-        tap.enqueue(.scrollWheel, event: event, inspect: { suppressed = $0 == nil }) {
-            wheelDelivered.signal()
-        }
-        XCTAssertEqual(wheelDelivered.wait(timeout: .now() + 2), .success)
-        XCTAssertTrue(suppressed, "The tap must preserve nil from the smoothing callback")
-        XCTAssertTrue(driver.isRunning)
-
-        let disabled = DispatchSemaphore(value: 0)
-        tap.enqueue(.tapDisabledByTimeout, event: event) { disabled.signal() }
-        XCTAssertEqual(disabled.wait(timeout: .now() + 2), .success)
-        XCTAssertFalse(driver.isRunning)
-        XCTAssertEqual(posted, 0)
-        XCTAssertTrue(service.isRunning)
-    }
-
-    func testMissingSmoothingReversesDirectlyAndIsRetriedOnTheSameTap() throws {
-        var connections: [TestConnection] = []
-        var processorAvailable = false
-        let driver = TestFrameDriver()
-        let service = EventTapService(permissionGranted: { true }, makeConnection: { handler in
-            let tap = TestConnection(handler: handler)
-            connections.append(tap)
-            return tap
-        }, makeProcessor: {
-            guard processorAvailable else { return nil }
-            return ScrollEventProcessor(driver: driver, now: { 0 }, makeEvent: { _ in nil }, post: { _ in })
-        })
-        defer { service.stop() }
-
-        XCTAssertThrowsError(try service.start()) { error in
-            XCTAssertTrue(String(describing: error).contains("smooth"), "\(error)")
-        }
-        XCTAssertFalse(service.isRunning, "the health check must retry missing smoothing")
-        let tap = try XCTUnwrap(connections.first)
-        XCTAssertTrue(tap.isEnabled)
-        let direct = try wheel()
-        let delivered = DispatchSemaphore(value: 0)
-        tap.enqueue(.scrollWheel, event: direct) { delivered.signal() }
-        XCTAssertEqual(delivered.wait(timeout: .now() + 2), .success)
-        XCTAssertEqual(direct.getIntegerValueField(.scrollWheelEventDeltaAxis1), -3)
-
-        processorAvailable = true
-        try service.start()
-        XCTAssertTrue(service.isRunning)
-        XCTAssertEqual(connections.count, 1)
-        let smoothed = try wheel()
-        smoothed.flags = []
-        var suppressed = false
-        let consumed = DispatchSemaphore(value: 0)
-        tap.enqueue(.scrollWheel, event: smoothed, inspect: { suppressed = $0 == nil }) { consumed.signal() }
-        XCTAssertEqual(consumed.wait(timeout: .now() + 2), .success)
-        XCTAssertTrue(suppressed, "smoothing must take over without replacing the tap")
     }
 
     func testPermissionCheckStaysOnCallerAndTapLivesOnWorker() throws {
@@ -416,13 +298,6 @@ final class EventTapServiceTests: XCTestCase {
         event.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: 21)
         return event
     }
-}
-
-private final class TestFrameDriver: SmoothingFrameDriving {
-    var frame: (() -> Void)?
-    var isRunning: Bool { frame != nil }
-    func start(_ onFrame: @escaping () -> Void) -> Bool { frame = onFrame; return true }
-    func stop() { frame = nil }
 }
 
 /// Only the system/TCC connection is replaced. The production worker, callback,

@@ -13,13 +13,6 @@ final class ScrollTransformTests: XCTestCase {
         XCTAssertEqual(event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2), 6.0)
     }
 
-    func testSyntheticMarkerIsRecognized() throws {
-        let event = try makeEvent()
-        XCTAssertFalse(ScrollTransform.isSynthetic(event))
-        event.setIntegerValueField(.eventSourceUserData, value: ScrollTransform.syntheticMarker)
-        XCTAssertTrue(ScrollTransform.isSynthetic(event))
-    }
-
     func testTrackpadHeuristicUsesPhasesAndScrollCount() throws {
         for field: CGEventField in [.scrollWheelEventScrollPhase, .scrollWheelEventMomentumPhase,
                                     .scrollWheelEventScrollCount] {
@@ -66,13 +59,8 @@ final class ScrollTransformTests: XCTestCase {
         }
     }
 
-    func testMarkedAndNonScrollEventsAreIgnored() throws {
+    func testNonScrollEventsAreIgnored() throws {
         let event = try makeEvent(delta: 2, point: 7, fixed: 1.5)
-        let before = ScrollTransform.verticalSample(from: event)
-        event.setIntegerValueField(.eventSourceUserData, value: ScrollTransform.syntheticMarker)
-        XCTAssertFalse(ScrollTransform.reverseMouseWheelEvent(event))
-        XCTAssertEqual(ScrollTransform.verticalSample(from: event), before)
-        event.setIntegerValueField(.eventSourceUserData, value: 0)
         event.type = .mouseMoved
         XCTAssertFalse(ScrollTransform.reverseMouseWheelEvent(event))
     }

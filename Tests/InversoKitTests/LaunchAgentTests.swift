@@ -51,63 +51,6 @@ final class LaunchAgentTests: XCTestCase {
         XCTAssertTrue(isDirectory.boolValue)
     }
 
-    func testDisabledSmoothingIsStoredInDaemonArguments() throws {
-        let contents = LaunchAgent.plistContents(executablePath: "/tmp/R&D/inverso", smoothingEnabled: false)
-        let plist = try XCTUnwrap(try PropertyListSerialization.propertyList(from: Data(contents.utf8), format: nil) as? [String: Any])
-        XCTAssertEqual(plist["ProgramArguments"] as? [String], ["/tmp/R&D/inverso", "--daemon", "--no-smooth"])
-    }
-
-    func testMissingInstallationDefaultsToSmoothing() throws {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("inverso-tests-\(UUID().uuidString)")
-        XCTAssertTrue(try LaunchAgent.smoothingEnabled(homeDirectory: home))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: home.path))
-    }
-
-    func testSmoothingSettingRoundTripsAndCanBeExplicitlyReenabled() throws {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("inverso-tests-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: home) }
-        let url = try LaunchAgent.writePlist(executablePath: "/tmp/inverso", smoothingEnabled: false, homeDirectory: home)
-        XCTAssertFalse(try LaunchAgent.smoothingEnabled(homeDirectory: home))
-        // A bare reinstall preserves false before writing the updated executable.
-        let preserved = try LaunchAgent.smoothingEnabled(homeDirectory: home)
-        try LaunchAgent.writePlist(executablePath: "/tmp/new/inverso", smoothingEnabled: preserved, homeDirectory: home)
-        let off = try XCTUnwrap(try PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil) as? [String: Any])
-        XCTAssertEqual(off["ProgramArguments"] as? [String], ["/tmp/new/inverso", "--daemon", "--no-smooth"])
-        try LaunchAgent.writePlist(executablePath: "/tmp/new/inverso", smoothingEnabled: true, homeDirectory: home)
-        XCTAssertTrue(try LaunchAgent.smoothingEnabled(homeDirectory: home))
-        let on = try XCTUnwrap(try PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil) as? [String: Any])
-        XCTAssertEqual(on["ProgramArguments"] as? [String], ["/tmp/new/inverso", "--daemon"])
-    }
-
-    func testExistingDefaultAndExplicitSmoothArgumentsAreEnabled() throws {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("inverso-tests-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: home) }
-        let url = try LaunchAgent.writePlist(executablePath: "/tmp/inverso", homeDirectory: home)
-        XCTAssertTrue(try LaunchAgent.smoothingEnabled(homeDirectory: home))
-        let contents: [String: Any] = ["Label": LaunchAgent.label, "ProgramArguments": ["/tmp/inverso", "--daemon", "--smooth"]]
-        try PropertyListSerialization.data(fromPropertyList: contents, format: .xml, options: 0).write(to: url)
-        XCTAssertTrue(try LaunchAgent.smoothingEnabled(homeDirectory: home))
-    }
-
-    func testMalformedExistingModeFailsRatherThanOverwritingUserPreference() throws {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("inverso-tests-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: home) }
-        let url = try LaunchAgent.writePlist(executablePath: "/tmp/inverso", homeDirectory: home)
-        let invalidArguments = [
-            [], ["/tmp/inverso"], ["/tmp/inverso", "status"], ["/tmp/inverso", "--daemon", "--wat"],
-            ["/tmp/inverso", "--daemon", "--smooth", "--no-smooth"],
-        ]
-        for arguments in invalidArguments {
-            let contents: [String: Any] = ["Label": LaunchAgent.label, "ProgramArguments": arguments]
-            let data = try PropertyListSerialization.data(fromPropertyList: contents, format: .xml, options: 0)
-            try data.write(to: url)
-            XCTAssertThrowsError(try LaunchAgent.smoothingEnabled(homeDirectory: home), "\(arguments)")
-            XCTAssertEqual(try Data(contentsOf: url), data)
-        }
-        try Data("not a property list".utf8).write(to: url)
-        XCTAssertThrowsError(try LaunchAgent.smoothingEnabled(homeDirectory: home))
-    }
-
     func testRunningStatusUsesOnlyTopLevelFields() throws {
         let status = try LaunchAgent.serviceStatus { _ in (0, runningOutput) }
         XCTAssertTrue(status.isLoaded)

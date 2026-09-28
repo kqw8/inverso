@@ -5,7 +5,6 @@ protocol EventTapControlling: AnyObject {
     var disableStats: TapDisableStats { get }
     func start() throws
     func stop()
-    func setScrollSpeed(_ multiplier: Double)
 }
 
 public final class DaemonRunner {
@@ -13,33 +12,27 @@ public final class DaemonRunner {
     private let permissionGranted: () -> Bool
     private let requestPermission: () -> Void
     private let report: (String) -> Void
-    private let loadSettings: (() throws -> ScrollSettings)?
     private var healthTimer: Timer?
     private var instanceLock: SingleInstanceLock?
     private var promptedForPermission = false
     private var lastReport: String?
-    private var lastAppliedSpeed: Double?
-    private var lastSettingsError: String?
     private var reportedDisables = TapDisableStats()
 
-    public convenience init(smoothingEnabled: Bool = true) {
+    public convenience init() {
         self.init(
-            service: EventTapService(smoothingEnabled: smoothingEnabled),
+            service: EventTapService(),
             permissionGranted: { Accessibility.isTrusted },
             requestPermission: { _ = Accessibility.requestPrompt() },
-            report: { FileHandle.standardError.write(Data(DaemonRunner.logLine($0, date: Date()).utf8)) },
-            loadSettings: { try ScrollSettingsStore.load() }
+            report: { FileHandle.standardError.write(Data(DaemonRunner.logLine($0, date: Date()).utf8)) }
         )
     }
 
     init(service: EventTapControlling, permissionGranted: @escaping () -> Bool,
-         requestPermission: @escaping () -> Void, report: @escaping (String) -> Void,
-         loadSettings: (() throws -> ScrollSettings)? = nil) {
+         requestPermission: @escaping () -> Void, report: @escaping (String) -> Void) {
         self.service = service
         self.permissionGranted = permissionGranted
         self.requestPermission = requestPermission
         self.report = report
-        self.loadSettings = loadSettings
     }
 
     public func run() throws -> Never {
@@ -64,7 +57,6 @@ public final class DaemonRunner {
 
     // Also called after a successful start: permission and tap validity can change.
     func refresh() {
-        refreshSettings()
         guard permissionGranted() else {
             service.stop()
             if !promptedForPermission {
@@ -94,26 +86,6 @@ public final class DaemonRunner {
         report("macOS disabled the scroll event tap \(count) \(count == 1 ? "time" : "times")\(last); "
             + "a valid tap is re-enabled at once and the health check rebuilds an invalid one. "
             + "Since start: \(stats.timeouts) timeout(s), \(stats.userInput) user-input.")
-    }
-
-    private func refreshSettings() {
-        guard let loadSettings else { return }
-        do {
-            // Filesystem work belongs to the control thread, never a scroll or
-            // animation callback. Keep the last valid speed on read/parse failure.
-            let settings = try loadSettings()
-            if settings.speedMultiplier != lastAppliedSpeed {
-                service.setScrollSpeed(settings.speedMultiplier)
-                lastAppliedSpeed = settings.speedMultiplier
-            }
-            lastSettingsError = nil
-        } catch {
-            let message = "could not load scroll settings: \(error); keeping the current speed."
-            if lastSettingsError != message {
-                lastSettingsError = message
-                report(message)
-            }
-        }
     }
 
     /// A local timestamp lets a log line be matched to a noticed stall.

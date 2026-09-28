@@ -16,7 +16,6 @@ final class ScrollStressTests: XCTestCase {
             ("gesture", Axis(2, 12, 1), .scrollWheelEventScrollPhase, 2, false),
             ("momentum", Axis(-1, -8, -0.5), .scrollWheelEventMomentumPhase, 1, false),
             ("scroll count", Axis(1, 5, 0.25), .scrollWheelEventScrollCount, 2, false),
-            ("synthetic", Axis(1, 5, 0.25), .eventSourceUserData, ScrollTransform.syntheticMarker, false),
             ("horizontal-only", Axis(0, 0, 0), nil, 0, false),
             ("third-axis-only", Axis(0, 0, 0), nil, 0, false),
             ("non-scroll", Axis(2, 10, 1), nil, 0, false),
@@ -25,20 +24,18 @@ final class ScrollStressTests: XCTestCase {
             let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
                                              wheelCount: 3, wheel1: 0, wheel2: 0, wheel3: 0))
             setAxis(item.vertical, on: event, fields: Self.verticalFields)
-            setAxis(index == 10 ? Axis(0, 0, 0) : Axis(-3, -21, -2.25),
+            setAxis(item.name == "third-axis-only" ? Axis(0, 0, 0) : Axis(-3, -21, -2.25),
                     on: event, fields: Self.horizontalFields)
-            setAxis(index == 9 ? Axis(0, 0, 0) : Axis(2, 13, 0.75),
+            setAxis(item.name == "horizontal-only" ? Axis(0, 0, 0) : Axis(2, 13, 0.75),
                     on: event, fields: Self.thirdFields)
             event.timestamp = 7_000_000_000 + UInt64(index) * 123_456
             event.location = CGPoint(x: 100 + index, y: 200 - index)
             event.flags = index.isMultiple(of: 2) ? [.maskShift, .maskControl] : [.maskAlternate]
             // Initialize source data once; macOS may retain the first explicit
             // source-data value when this field is assigned repeatedly.
-            if item.field != .eventSourceUserData {
-                event.setIntegerValueField(.eventSourceUserData, value: 101 + Int64(index))
-            }
+            event.setIntegerValueField(.eventSourceUserData, value: 101 + Int64(index))
             if let field = item.field { event.setIntegerValueField(field, value: item.value) }
-            if index == 11 { event.type = .mouseMoved }
+            if item.name == "non-scroll" { event.type = .mouseMoved }
             return event
         }
         let originals = events.map(Snapshot.init)

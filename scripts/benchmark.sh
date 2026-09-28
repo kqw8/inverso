@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compile the production transform and smoother with optimization. No event posting.
+# Compile the production transform with optimization. No event posting.
 set -euo pipefail
 if [ "$#" -ne 0 ]; then
   echo 'Usage: bash scripts/benchmark.sh' >&2
@@ -17,6 +17,5 @@ xcrun swiftc -O -whole-module-optimization -swift-version 5 \
   -target "$(uname -m)-apple-macosx13.0" \
   -module-cache-path "$BENCHMARK_DIR/module-cache" \
   "$SCRIPT_DIR/../Sources/InversoKit/ScrollTransform.swift" \
-  "$SCRIPT_DIR/../Sources/InversoKit/ScrollSmoother.swift" \
   "$SCRIPT_DIR/benchmark.swift" -o "$BENCHMARK_DIR/benchmark"
 "$BENCHMARK_DIR/benchmark"
