@@ -130,6 +130,8 @@ final class DaemonRunnerTests: XCTestCase {
         let first = try XCTUnwrap(messages.dropFirst().first)
         XCTAssertTrue(first.contains("2 time"), first)
         XCTAssertTrue(first.contains("2 timeout"), first)
+        // An invalid tap cannot be re-enabled; the health check rebuilds it.
+        XCTAssertTrue(first.contains("rebuilds"), first)
         service.disableStats.userInput = 1
         runner.refresh()
         XCTAssertEqual(messages.count, 3)

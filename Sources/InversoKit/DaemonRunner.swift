@@ -92,8 +92,8 @@ public final class DaemonRunner {
         let last = stats.last.map { " (last at \(Self.timestamp($0)))" } ?? ""
         // Not reportChange: this line must not make the next state message repeat.
         report("macOS disabled the scroll event tap \(count) \(count == 1 ? "time" : "times")\(last); "
-            + "it was re-enabled immediately. Since start: \(stats.timeouts) timeout(s), "
-            + "\(stats.userInput) user-input.")
+            + "a valid tap is re-enabled at once and the health check rebuilds an invalid one. "
+            + "Since start: \(stats.timeouts) timeout(s), \(stats.userInput) user-input.")
     }
 
     private func refreshSettings() {
