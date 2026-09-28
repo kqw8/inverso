@@ -49,6 +49,10 @@ public final class EventTapService: EventTapControlling {
         worker.sync { [state] in state.isRunning }
     }
 
+    var disableStats: TapDisableStats {
+        worker.sync { [state] in state.disableStats }
+    }
+
     public func start() throws {
         // AXIsProcessTrusted may perform IPC. Never run it on the input thread.
         guard permissionGranted() else { throw ServiceError.accessibilityPermissionMissing }
@@ -90,6 +94,13 @@ public final class EventTapService: EventTapControlling {
 
 }
 
+/// How often macOS disabled the scroll tap; each was re-enabled immediately.
+struct TapDisableStats: Equatable {
+    var timeouts = 0
+    var userInput = 0
+    var last: Date?
+}
+
 /// All state, including recovery from callbacks, belongs to one run loop. It
 /// never calls back into the control thread or acquires a control-side lock.
 private final class EventTapState {
@@ -98,6 +109,7 @@ private final class EventTapState {
     private var connection: EventTapConnection?
     private var processor: ScrollEventProcessor?
     private var scrollSpeed = 1.0
+    private(set) var disableStats = TapDisableStats()
 
     init(makeConnection: @escaping EventTapFactory, makeProcessor: (() -> ScrollEventProcessor?)?) {
         self.makeConnection = makeConnection
@@ -158,6 +170,9 @@ private final class EventTapState {
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            // Counted here, reported by the control thread: no logging on input.
+            if type == .tapDisabledByTimeout { disableStats.timeouts += 1 } else { disableStats.userInput += 1 }
+            disableStats.last = Date()
             processor?.cancel()
             if let connection, connection.isValid { connection.setEnabled(true) }
         } else if let processor {

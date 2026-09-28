@@ -290,6 +290,10 @@ final class EventTapServiceTests: XCTestCase {
             XCTAssertTrue(enabledOnReturn)
             XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventDeltaAxis1), 3)
         }
+        let stats = service.disableStats
+        XCTAssertEqual(stats.timeouts, 1)
+        XCTAssertEqual(stats.userInput, 1)
+        XCTAssertNotNil(stats.last)
     }
 
     func testCallbackReturnsOriginalEventAndPreservesTrackpad() throws {

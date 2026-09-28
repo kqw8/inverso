@@ -116,8 +116,44 @@ final class DaemonRunnerTests: XCTestCase {
         XCTAssertEqual(messages.count, 2)
     }
 
+    func testTapDisablesAreReportedOncePerIncreaseWithoutRepeatingReady() throws {
+        let service = StubTap()
+        var messages: [String] = []
+        let runner = DaemonRunner(service: service, permissionGranted: { true },
+                                  requestPermission: {}, report: { messages.append($0) })
+        runner.refresh()
+        XCTAssertEqual(messages, ["scroll event tap is ready."])
+        service.disableStats = TapDisableStats(timeouts: 2, userInput: 0, last: Date())
+        runner.refresh()
+        runner.refresh()
+        XCTAssertEqual(messages.count, 2)
+        let first = try XCTUnwrap(messages.dropFirst().first)
+        XCTAssertTrue(first.contains("2 time"), first)
+        XCTAssertTrue(first.contains("2 timeout"), first)
+        service.disableStats.userInput = 1
+        runner.refresh()
+        XCTAssertEqual(messages.count, 3)
+        let second = try XCTUnwrap(messages.dropFirst(2).first)
+        XCTAssertTrue(second.contains("1 time"), second)
+        XCTAssertTrue(second.contains("1 user-input"), second)
+        XCTAssertFalse(messages.dropFirst().contains("scroll event tap is ready."))
+    }
+
+    func testLogLinesStartWithALocalISO8601Timestamp() throws {
+        let line = DaemonRunner.logLine("scroll event tap is ready.", date: Date(timeIntervalSince1970: 0))
+        let pattern = #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2}) inverso: scroll event tap is ready\.\n$"#
+        XCTAssertNotNil(line.range(of: pattern, options: .regularExpression), line)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let stamp = try XCTUnwrap(line.split(separator: " ").first)
+        XCTAssertEqual(formatter.date(from: String(stamp)), Date(timeIntervalSince1970: 0))
+        let offset = TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: 0))
+        XCTAssertEqual(stamp.hasSuffix("Z"), offset == 0, "timestamps use the local time zone")
+    }
+
     private final class StubTap: EventTapControlling {
         var isRunning = false
+        var disableStats = TapDisableStats()
         var failStart = false
         var starts = 0
         var speedMultiplier = 1.0

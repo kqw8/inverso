@@ -2,6 +2,7 @@ import Foundation
 
 protocol EventTapControlling: AnyObject {
     var isRunning: Bool { get }
+    var disableStats: TapDisableStats { get }
     func start() throws
     func stop()
     func setScrollSpeed(_ multiplier: Double)
@@ -19,13 +20,14 @@ public final class DaemonRunner {
     private var lastReport: String?
     private var lastAppliedSpeed: Double?
     private var lastSettingsError: String?
+    private var reportedDisables = TapDisableStats()
 
     public convenience init(smoothingEnabled: Bool = true) {
         self.init(
             service: EventTapService(smoothingEnabled: smoothingEnabled),
             permissionGranted: { Accessibility.isTrusted },
             requestPermission: { _ = Accessibility.requestPrompt() },
-            report: { FileHandle.standardError.write(Data(("inverso: \($0)\n").utf8)) },
+            report: { FileHandle.standardError.write(Data(DaemonRunner.logLine($0, date: Date()).utf8)) },
             loadSettings: { try ScrollSettingsStore.load() }
         )
     }
@@ -75,6 +77,19 @@ public final class DaemonRunner {
         } catch {
             reportChange("\(error); will retry.")
         }
+        reportTapDisables()
+    }
+
+    private func reportTapDisables() {
+        let stats = service.disableStats
+        let count = stats.timeouts + stats.userInput - reportedDisables.timeouts - reportedDisables.userInput
+        guard count > 0 else { return }
+        reportedDisables = stats
+        let last = stats.last.map { " (last at \(Self.timestamp($0)))" } ?? ""
+        // Not reportChange: this line must not make the next state message repeat.
+        report("macOS disabled the scroll event tap \(count) \(count == 1 ? "time" : "times")\(last); "
+            + "it was re-enabled immediately. Since start: \(stats.timeouts) timeout(s), "
+            + "\(stats.userInput) user-input.")
     }
 
     private func refreshSettings() {
@@ -95,6 +110,15 @@ public final class DaemonRunner {
                 report(message)
             }
         }
+    }
+
+    /// A local timestamp lets a log line be matched to a noticed stall.
+    static func logLine(_ message: String, date: Date) -> String {
+        "\(timestamp(date)) inverso: \(message)\n"
+    }
+
+    private static func timestamp(_ date: Date) -> String {
+        date.formatted(Date.ISO8601FormatStyle(timeZoneSeparator: .colon, timeZone: .current))
     }
 
     private func reportChange(_ message: String) {
