@@ -44,7 +44,11 @@ public final class DaemonRunner {
 
     public func run() throws -> Never {
         precondition(Thread.isMainThread)
-        instanceLock = try SingleInstanceLock(url: SingleInstanceLock.defaultURL)
+        // launchd redirects stderr to a file: wait there, but fail fast in a terminal.
+        instanceLock = try SingleInstanceLock(url: SingleInstanceLock.defaultURL,
+                                              waitIfHeld: isatty(STDERR_FILENO) == 0) {
+            report("another inverso daemon is already running; waiting for it to exit.")
+        }
         refresh()
         let timer = Timer(timeInterval: 5.0, repeats: true) { [weak self] _ in
             self?.refresh()

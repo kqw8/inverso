@@ -22,6 +22,37 @@ final class SingleInstanceLockTests: XCTestCase {
         withExtendedLifetime(next) {}
     }
 
+    func testWaitingOwnerReportsOnceAndAcquiresAfterRelease() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("daemon.lock")
+        var first: SingleInstanceLock? = try SingleInstanceLock(url: url)
+        let waiting = DispatchSemaphore(value: 0)
+        let finished = DispatchSemaphore(value: 0)
+        var waits = 0
+        var second: SingleInstanceLock?
+        var failure: Error?
+        Thread.detachNewThread {
+            do {
+                second = try SingleInstanceLock(url: url, waitIfHeld: true, onWait: {
+                    waits += 1
+                    waiting.signal()
+                })
+            } catch {
+                failure = error
+            }
+            finished.signal()
+        }
+        XCTAssertEqual(waiting.wait(timeout: .now() + 2), .success, "a held lock must be reported")
+        XCTAssertEqual(finished.wait(timeout: .now() + 0.2), .timedOut, "must wait while the lock is held")
+        withExtendedLifetime(first) {}
+        first = nil
+        XCTAssertEqual(finished.wait(timeout: .now() + 2), .success, "must acquire after release")
+        XCTAssertNil(failure)
+        XCTAssertNotNil(second)
+        XCTAssertEqual(waits, 1)
+    }
+
     func testDoesNotFollowSymbolicLink() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

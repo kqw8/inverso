@@ -25,18 +25,29 @@ final class SingleInstanceLock {
 
     private let descriptor: Int32
 
-    init(url: URL) throws {
+    /// With waitIfHeld, a held lock is reported once and then waited for. Under
+    /// launchd, exiting instead would relaunch this daemon every ten seconds.
+    init(url: URL, waitIfHeld: Bool = false, onWait: () -> Void = {}) throws {
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
         let fd = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, mode_t(0o600))
         guard fd >= 0 else { throw LockError.system(operation: "open", code: errno) }
-        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
-            let code = errno
-            close(fd)
-            if code == EWOULDBLOCK { throw LockError.alreadyRunning }
-            throw LockError.system(operation: "acquire", code: code)
+        if flock(fd, LOCK_EX | LOCK_NB) != 0 {
+            var code = errno
+            if code == EWOULDBLOCK && waitIfHeld {
+                onWait()
+                // SIGTERM from launchctl still ends a waiting process.
+                repeat {
+                    code = flock(fd, LOCK_EX) == 0 ? 0 : errno
+                } while code == EINTR
+            }
+            if code != 0 {
+                close(fd)
+                if code == EWOULDBLOCK { throw LockError.alreadyRunning }
+                throw LockError.system(operation: "acquire", code: code)
+            }
         }
         descriptor = fd
     }
