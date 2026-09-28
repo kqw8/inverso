@@ -87,6 +87,45 @@ final class EventTapServiceTests: XCTestCase {
         XCTAssertTrue(service.isRunning)
     }
 
+    func testMissingSmoothingReversesDirectlyAndIsRetriedOnTheSameTap() throws {
+        var connections: [TestConnection] = []
+        var processorAvailable = false
+        let driver = TestFrameDriver()
+        let service = EventTapService(permissionGranted: { true }, makeConnection: { handler in
+            let tap = TestConnection(handler: handler)
+            connections.append(tap)
+            return tap
+        }, makeProcessor: {
+            guard processorAvailable else { return nil }
+            return ScrollEventProcessor(driver: driver, now: { 0 }, makeEvent: { _ in nil }, post: { _ in })
+        })
+        defer { service.stop() }
+
+        XCTAssertThrowsError(try service.start()) { error in
+            XCTAssertTrue(String(describing: error).contains("smooth"), "\(error)")
+        }
+        XCTAssertFalse(service.isRunning, "the health check must retry missing smoothing")
+        let tap = try XCTUnwrap(connections.first)
+        XCTAssertTrue(tap.isEnabled)
+        let direct = try wheel()
+        let delivered = DispatchSemaphore(value: 0)
+        tap.enqueue(.scrollWheel, event: direct) { delivered.signal() }
+        XCTAssertEqual(delivered.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(direct.getIntegerValueField(.scrollWheelEventDeltaAxis1), -3)
+
+        processorAvailable = true
+        try service.start()
+        XCTAssertTrue(service.isRunning)
+        XCTAssertEqual(connections.count, 1)
+        let smoothed = try wheel()
+        smoothed.flags = []
+        var suppressed = false
+        let consumed = DispatchSemaphore(value: 0)
+        tap.enqueue(.scrollWheel, event: smoothed, inspect: { suppressed = $0 == nil }) { consumed.signal() }
+        XCTAssertEqual(consumed.wait(timeout: .now() + 2), .success)
+        XCTAssertTrue(suppressed, "smoothing must take over without replacing the tap")
+    }
+
     func testPermissionCheckStaysOnCallerAndTapLivesOnWorker() throws {
         let caller = Thread.current
         var permissionThread: Thread?

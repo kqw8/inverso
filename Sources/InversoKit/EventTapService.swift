@@ -9,6 +9,7 @@ public final class EventTapService: EventTapControlling {
         case eventTapCreationFailed
         case runLoopSourceCreationFailed
         case eventTapEnableFailed
+        case smoothingUnavailable
 
         public var description: String {
             switch self {
@@ -20,6 +21,8 @@ public final class EventTapService: EventTapControlling {
                 return "could not create the event tap run loop source"
             case .eventTapEnableFailed:
                 return "could not enable the scroll event tap"
+            case .smoothingUnavailable:
+                return "could not create the smooth scrolling event source; reversing without smoothing"
             }
         }
     }
@@ -31,11 +34,12 @@ public final class EventTapService: EventTapControlling {
     public convenience init(smoothingEnabled: Bool = true) {
         self.init(permissionGranted: { Accessibility.isTrusted },
                   makeConnection: { try SystemEventTapConnection(handler: $0) },
-                  makeProcessor: { smoothingEnabled ? ScrollEventProcessor.production() : nil })
+                  makeProcessor: smoothingEnabled ? { ScrollEventProcessor.production() } : nil)
     }
 
+    /// A nil makeProcessor selects direct reversal; a nil result is retried.
     init(permissionGranted: @escaping () -> Bool, makeConnection: @escaping EventTapFactory,
-         makeProcessor: @escaping () -> ScrollEventProcessor? = { nil }) {
+         makeProcessor: (() -> ScrollEventProcessor?)? = nil) {
         self.permissionGranted = permissionGranted
         state = EventTapState(makeConnection: makeConnection, makeProcessor: makeProcessor)
         worker = RunLoopWorker()
@@ -90,44 +94,53 @@ public final class EventTapService: EventTapControlling {
 /// never calls back into the control thread or acquires a control-side lock.
 private final class EventTapState {
     private let makeConnection: EventTapFactory
-    private let makeProcessor: () -> ScrollEventProcessor?
+    private let makeProcessor: (() -> ScrollEventProcessor?)?
     private var connection: EventTapConnection?
     private var processor: ScrollEventProcessor?
     private var scrollSpeed = 1.0
 
-    init(makeConnection: @escaping EventTapFactory, makeProcessor: @escaping () -> ScrollEventProcessor?) {
+    init(makeConnection: @escaping EventTapFactory, makeProcessor: (() -> ScrollEventProcessor?)?) {
         self.makeConnection = makeConnection
         self.makeProcessor = makeProcessor
     }
 
-    var isRunning: Bool {
+    /// Missing smoothing counts as not running so the health check retries it.
+    var isRunning: Bool { tapIsRunning && !smoothingMissing }
+
+    private var tapIsRunning: Bool {
         guard let connection else { return false }
         return connection.isValid && connection.isEnabled
     }
 
+    private var smoothingMissing: Bool { makeProcessor != nil && processor == nil }
+
     func start() throws {
-        if isRunning { return }
-        if let connection, connection.isValid {
+        if !tapIsRunning, let connection, connection.isValid {
             connection.setEnabled(true)
-            if isRunning { return }
         }
-        stop()
-        processor = makeProcessor()
-        processor?.setScrollSpeed(scrollSpeed)
-        do {
-            connection = try makeConnection { [weak self] type, event in
-                guard let self else { return Unmanaged.passUnretained(event) }
-                return self.handle(type: type, event: event)
+        if !tapIsRunning {
+            stop()
+            do {
+                connection = try makeConnection { [weak self] type, event in
+                    guard let self else { return Unmanaged.passUnretained(event) }
+                    return self.handle(type: type, event: event)
+                }
+            } catch {
+                stop()
+                throw error
             }
-        } catch {
-            stop()
-            throw error
+            connection?.setEnabled(true)
+            guard tapIsRunning else {
+                stop()
+                throw EventTapService.ServiceError.eventTapEnableFailed
+            }
         }
-        connection?.setEnabled(true)
-        guard isRunning else {
-            stop()
-            throw EventTapService.ServiceError.eventTapEnableFailed
+        if processor == nil, let makeProcessor {
+            processor = makeProcessor()
+            processor?.setScrollSpeed(scrollSpeed)
         }
+        // Wheel input is reversed directly until a processor can be created.
+        if smoothingMissing { throw EventTapService.ServiceError.smoothingUnavailable }
     }
 
     func stop() {
