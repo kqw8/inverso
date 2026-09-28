@@ -6,7 +6,7 @@ import Foundation
 final class ScrollEventProcessor {
     private let driver: SmoothingFrameDriving
     private let now: () -> Double
-    private let makeEvent: (Int32) -> CGEvent?
+    let makeEvent: (Int32) -> CGEvent?
     private let post: (CGEvent) -> Void
     private var speedMultiplier = 1.0
     private var smoother = ScrollSmoother()

@@ -6,10 +6,10 @@ import XCTest
 final class PixelEventFactoryTests: XCTestCase {
     func testOneEventSourceServesEveryEvent() throws {
         var sources = 0
-        let factory = try XCTUnwrap(PixelEventFactory(makeSource: {
+        guard let factory = PixelEventFactory(makeSource: {
             sources += 1
             return CGEventSource(stateID: .privateState)
-        }))
+        }) else { throw XCTSkip("CoreGraphics event sources need a WindowServer session") }
         for pixels in 1...100 {
             let event = try XCTUnwrap(factory.make(pixels: Int32(pixels)))
             XCTAssertTrue(ScrollTransform.isSynthetic(event))
@@ -22,8 +22,7 @@ final class PixelEventFactoryTests: XCTestCase {
     // Each private event source pins a read-only WindowServer page for the life
     // of the process; 0.3.1 leaked one per synthetic scroll event (1.7 GB in 4 days).
     func testManyEventsDoNotPinSharedMemory() throws {
-        let factory = try XCTUnwrap(PixelEventFactory())
-        guard factory.make(pixels: 1) != nil else {
+        guard let factory = PixelEventFactory(), factory.make(pixels: 1) != nil else {
             throw XCTSkip("CoreGraphics event sources need a WindowServer session")
         }
         let before = Self.readOnlySharedRegionCount()
@@ -32,6 +31,19 @@ final class PixelEventFactoryTests: XCTestCase {
         }
         let growth = Self.readOnlySharedRegionCount() - before
         XCTAssertLessThan(growth, 25, "synthetic events must not map WindowServer memory per event")
+    }
+
+    // Guards the production wiring, where 0.3.1 created a source per event.
+    func testProductionProcessorEventsDoNotPinSharedMemory() throws {
+        guard let processor = ScrollEventProcessor.production(), processor.makeEvent(1) != nil else {
+            throw XCTSkip("CoreGraphics event sources need a WindowServer session")
+        }
+        let before = Self.readOnlySharedRegionCount()
+        for _ in 0..<500 {
+            autoreleasepool { _ = processor.makeEvent(1) }
+        }
+        let growth = Self.readOnlySharedRegionCount() - before
+        XCTAssertLessThan(growth, 25, "production events must share one event source")
     }
 
     private static func readOnlySharedRegionCount() -> Int {
