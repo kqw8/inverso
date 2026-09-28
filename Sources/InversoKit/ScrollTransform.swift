@@ -60,6 +60,8 @@ public enum ScrollTransform {
     }
 
     public static func isLikelyTrackpad(_ event: CGEvent) -> Bool {
+        // Do not use isContinuous as a device identifier: mouse drivers can
+        // produce pixel-based wheel events too. This remains a heuristic.
         event.getIntegerValueField(.scrollWheelEventScrollPhase) != 0
             || event.getIntegerValueField(.scrollWheelEventMomentumPhase) != 0
             || event.getIntegerValueField(.scrollWheelEventScrollCount) != 0
@@ -72,10 +74,25 @@ public enum ScrollTransform {
     }
 
     public static func reverseVerticalFields(on event: CGEvent) {
+        // Read everything first: writing the line delta can also change the
+        // point and fixed-point fields inside Core Graphics.
         let sample = verticalSample(from: event)
         event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: -sample.delta)
         event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: -sample.pointDelta)
         event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: -sample.fixedPointDelta)
+    }
+
+    /// Mutates only eligible vertical wheel deltas; returns whether they changed.
+    @discardableResult
+    public static func reverseMouseWheelEvent(_ event: CGEvent) -> Bool {
+        guard event.type == .scrollWheel,
+              !isSynthetic(event),
+              !isLikelyTrackpad(event),
+              verticalSample(from: event).hasValue else {
+            return false
+        }
+        reverseVerticalFields(on: event)
+        return true
     }
 
     public static func setVerticalFields(on event: CGEvent, value: Double) {

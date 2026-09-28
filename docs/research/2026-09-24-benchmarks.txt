@@ -1,0 +1,58 @@
+Hardware: CPU model unavailable (arm64)
+macOS: 27.2 (26B5086k)
+swift-driver version: 1.167 Apple Swift version 6.4 (swiftlang-6.4.0.20.104 clang-2100.3.20.102)
+Target: arm64-apple-macosx27.2.0
+Transform CPU cost only; no tap, posting, permissions, device/display latency, or main-thread scheduling.
+Preallocated unposted fixtures; -O; 10000 warmup calls/fixture; 3 rounds.
+Percentiles below describe 1000 batch means of 256 calls, in ns/event; not individual-event tail latency.
+Timer/loop overhead is included. Validation is outside each timed region.
+| Round | Fixture | Calls | p50 ns | p95 ns | p99 ns | max ns |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | wheel-up | 256000 | 51.8 | 61.4 | 63.5 | 88.4 |
+| 1 | wheel-down | 256000 | 45.4 | 51.4 | 54.5 | 63.8 |
+| 1 | continuous-wheel | 256000 | 44.6 | 46.5 | 54.4 | 62.5 |
+| 1 | point-only | 256000 | 42.6 | 46.6 | 52.4 | 91.0 |
+| 1 | fixed-only | 256000 | 40.4 | 45.7 | 50.8 | 79.1 |
+| 1 | gesture | 256000 | 4.9 | 5.0 | 5.0 | 6.2 |
+| 1 | momentum | 256000 | 9.6 | 13.0 | 13.3 | 13.7 |
+| 1 | horizontal-only | 256000 | 21.8 | 26.9 | 30.4 | 30.8 |
+| 1 | marked | 256000 | 2.3 | 2.6 | 2.8 | 10.6 |
+Round 1 mixed throughput: 900000 calls, 0.024 s, 36846738 events/s
+| 2 | wheel-up | 256000 | 38.6 | 47.7 | 52.7 | 100.7 |
+| 2 | wheel-down | 256000 | 37.8 | 48.5 | 53.2 | 221.0 |
+| 2 | continuous-wheel | 256000 | 36.9 | 41.2 | 46.6 | 169.9 |
+| 2 | point-only | 256000 | 41.2 | 47.9 | 54.2 | 55.2 |
+| 2 | fixed-only | 256000 | 40.9 | 51.9 | 54.2 | 60.4 |
+| 2 | gesture | 256000 | 4.9 | 5.2 | 6.2 | 6.7 |
+| 2 | momentum | 256000 | 8.1 | 9.0 | 9.3 | 27.0 |
+| 2 | horizontal-only | 256000 | 21.3 | 24.2 | 26.9 | 29.6 |
+| 2 | marked | 256000 | 2.4 | 2.6 | 2.9 | 3.1 |
+Round 2 mixed throughput: 900000 calls, 0.024 s, 37364102 events/s
+| 3 | wheel-up | 256000 | 41.3 | 43.1 | 52.4 | 75.2 |
+| 3 | wheel-down | 256000 | 41.8 | 44.9 | 53.9 | 112.3 |
+| 3 | continuous-wheel | 256000 | 38.2 | 46.1 | 53.6 | 83.0 |
+| 3 | point-only | 256000 | 40.9 | 43.9 | 54.0 | 57.0 |
+| 3 | fixed-only | 256000 | 43.1 | 53.5 | 55.8 | 77.3 |
+| 3 | gesture | 256000 | 4.9 | 6.2 | 6.5 | 6.8 |
+| 3 | momentum | 256000 | 7.2 | 9.4 | 11.1 | 39.6 |
+| 3 | horizontal-only | 256000 | 19.9 | 24.7 | 28.2 | 54.5 |
+| 3 | marked | 256000 | 2.3 | 2.8 | 2.9 | 3.3 |
+Round 3 mixed throughput: 900000 calls, 0.023 s, 38312953 events/s
+Validated changed-event checksum: 5340000
+
+New smoothing-engine CPU benchmark; separate from the unchanged transform baseline above.
+Virtual input/tick times; no waiting, driver, CGEvent creation/posting, or device/display measurements.
+120 Hz virtual ticks; isolated gestures and 480 Hz dense input; one warmup pass/scenario; 3 rounds.
+Thread CPU time for each whole block, including operation selection, state checks, and checksum accumulation.
+ns/update divides CPU time by enqueue + advance calls; throughput is engine updates/s, not real-time frames/s.
+Fixtures are preallocated. Finite output, complete settlement, and fractional distance are validated outside timing.
+| Round | Scenario | Gestures | Enqueues | Advances | CPU ms | ns/update | updates/s |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | separate-wheel-gestures | 10000 | 10000 | 100000 | 1.082 | 9.8 | 101675332 |
+| 1 | dense-wheel-input | 1000 | 24000 | 16000 | 0.316 | 7.9 | 126766009 |
+| 2 | separate-wheel-gestures | 10000 | 10000 | 100000 | 1.043 | 9.5 | 105502937 |
+| 2 | dense-wheel-input | 1000 | 24000 | 16000 | 0.331 | 8.3 | 120830589 |
+| 3 | separate-wheel-gestures | 10000 | 10000 | 100000 | 1.101 | 10.0 | 99863822 |
+| 3 | dense-wheel-input | 1000 | 24000 | 16000 | 0.332 | 8.3 | 120572720 |
+Validated separate-wheel-gestures per round: 26125.000 signed / 109125.000 absolute pixels; 10000 settled gestures.
+Validated dense-wheel-input per round: 0.000 signed / 38000.000 absolute pixels; 1000 settled gestures.

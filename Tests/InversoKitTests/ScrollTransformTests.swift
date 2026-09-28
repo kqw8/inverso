@@ -53,10 +53,60 @@ final class ScrollTransformTests: XCTestCase {
     }
 
     func testTrackpadHeuristicUsesPhasesAndScrollCount() throws {
-        let event = try makeEvent()
-        XCTAssertFalse(ScrollTransform.isLikelyTrackpad(event))
-        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: 2)
-        XCTAssertTrue(ScrollTransform.isLikelyTrackpad(event))
+        for field: CGEventField in [.scrollWheelEventScrollPhase, .scrollWheelEventMomentumPhase,
+                                    .scrollWheelEventScrollCount] {
+            let event = try makeEvent(delta: 1, point: 9, fixed: 1.25)
+            let before = ScrollTransform.verticalSample(from: event)
+            event.setIntegerValueField(field, value: 2)
+            XCTAssertFalse(ScrollTransform.reverseMouseWheelEvent(event), "\(field)")
+            XCTAssertEqual(ScrollTransform.verticalSample(from: event), before)
+        }
+    }
+
+    func testContinuousWheelWithoutGesturePhasesStillReverses() throws {
+        // Some mouse drivers set isContinuous. It alone must not exclude a wheel.
+        let event = try makeEvent(delta: -2, point: -7, fixed: -1.5,
+                                  horizontalDelta: 3, horizontalPoint: 11)
+        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: 2.25)
+        event.flags = [.maskShift, .maskControl]
+        event.setIntegerValueField(.eventSourceUserData, value: 1234)
+        let horizontal = ScrollTransform.horizontalSample(from: event)
+        XCTAssertTrue(ScrollTransform.reverseMouseWheelEvent(event))
+        XCTAssertEqual(ScrollTransform.verticalSample(from: event),
+                       ScrollSample(delta: 2, pointDelta: 7, fixedPointDelta: 1.5))
+        XCTAssertEqual(ScrollTransform.horizontalSample(from: event), horizontal)
+        XCTAssertEqual(event.flags, [.maskShift, .maskControl])
+        XCTAssertEqual(event.getIntegerValueField(.eventSourceUserData), 1234)
+        XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventIsContinuous), 1)
+    }
+
+    func testSubLineDeltaIsReversedEvenWhenLineDeltaIsZero() throws {
+        let event = try makeEvent(point: 1, fixed: 0.125)
+        XCTAssertTrue(ScrollTransform.reverseMouseWheelEvent(event))
+        XCTAssertEqual(ScrollTransform.verticalSample(from: event),
+                       ScrollSample(delta: 0, pointDelta: -1, fixedPointDelta: -0.125))
+    }
+
+    func testHorizontalOnlyAndZeroEventsAreUnchanged() throws {
+        for horizontal: Int64 in [0, 3] {
+            let event = try makeEvent(horizontalDelta: horizontal, horizontalPoint: Double(horizontal) * 5)
+            let before = ScrollTransform.horizontalSample(from: event)
+            XCTAssertFalse(ScrollTransform.reverseMouseWheelEvent(event))
+            XCTAssertEqual(ScrollTransform.horizontalSample(from: event), before)
+            XCTAssertFalse(ScrollTransform.verticalSample(from: event).hasValue)
+        }
+    }
+
+    func testMarkedAndNonScrollEventsAreIgnored() throws {
+        let event = try makeEvent(delta: 2, point: 7, fixed: 1.5)
+        let before = ScrollTransform.verticalSample(from: event)
+        ScrollTransform.markSynthetic(event)
+        XCTAssertFalse(ScrollTransform.reverseMouseWheelEvent(event))
+        XCTAssertEqual(ScrollTransform.verticalSample(from: event), before)
+        event.setIntegerValueField(.eventSourceUserData, value: 0)
+        event.type = .mouseMoved
+        XCTAssertFalse(ScrollTransform.reverseMouseWheelEvent(event))
     }
 
     private func makeEvent(
