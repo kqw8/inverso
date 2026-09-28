@@ -1,5 +1,12 @@
 # Responsive scrolling design
 
+> **Superseded in part (2026-09-28, v0.3.2).** The passive context observer, gesture
+> anchor and target-PID cancellation described below were removed: they discarded
+> notches smooth mode had already consumed. Synthetic events now share one event
+> source instead of creating one per event. Discrete distance is lines × 40 since
+> 0.3.1, not the 10-pixels/line fallback below. See
+> [the scroll freeze record](../../research/2026-09-28-scroll-freeze.md).
+
 ## Intent
 
 The user wants a small macOS mouse-wheel reversal binary that feels immediate and

@@ -121,8 +121,11 @@ Permission checks and log writes stay there; brief tap-state checks run on the
 event thread that owns the tap. Permission checks and log writes cannot hold up the scroll callback.
 A timeout notification re-enables the tap immediately; the health check rebuilds an
 invalid one and resumes when permission returns.
-Repeated identical failures are logged once until the state changes. Logs are in
-`~/Library/Logs/inverso.err.log` and `~/Library/Logs/inverso.out.log`.
+Repeated identical failures are logged once until the state changes. Each log line
+starts with a local timestamp, and the health check reports when and how often macOS
+disabled the tap for a slow callback. If smooth mode cannot create its event source,
+wheel input is reversed directly and smoothing is retried at each health check.
+Logs are in `~/Library/Logs/inverso.err.log` and `~/Library/Logs/inverso.out.log`.
 
 ## Notes
 
@@ -133,15 +136,14 @@ Inverso handles ordinary physical mouse-wheel events. Trackpad-like events are p
   about 80 ms after the last input, and preserves fractional distance across frames.
   The 120 Hz frame timer stops when idle; it is not a mouse polling loop or a promise
   of display synchronization on every monitor.
-- Fast direction changes cancel old un-emitted motion. Button presses/releases,
-  dragging, modifier changes, native gesture input and substantial pointer movement
-  cancel the tail. Three display-coordinate units of pointer jitter are tolerated
-  around a fixed gesture anchor. These cancellations intentionally discard residual
-  distance to avoid a delayed scroll in another context; passive observation makes
-  cancellation best effort rather than a synchronous input barrier.
-- Only wheel events use a modifying tap. A separate passive observer watches the
-  context changes above, so ordinary pointer movement never waits for this tool.
-  Older observer events cannot cancel newer wheel input.
+- Every synthetic event comes from one event source created when the tap starts.
+  The scroll callback itself never calls WindowServer, which is waiting for its answer.
+- A notch that smooth mode has taken over is always delivered: pointer movement,
+  clicks, dragging and modifier keys never discard it. Only a direction change, a
+  speed change, trackpad or native gesture input, modified or mixed-axis wheel input,
+  or a stall of 0.5 s or more ends the remaining tail early.
+- Inverso taps scroll-wheel events only; pointer movement, clicks and keys never pass
+  through it.
 - Already-continuous wheels, modified input and mixed-axis events use direct
   reversal, avoiding double smoothing and preserving shortcut behavior.
 - Discrete wheel input uses fractional line distance × 40, matching Chromium's
@@ -157,7 +159,9 @@ Inverso handles ordinary physical mouse-wheel events. Trackpad-like events are p
   scrolling drivers need testing on the actual setup.
 - One daemon per user is allowed. The lock is released automatically when its process
   exits. Its empty file in `~/Library/Application Support/Inverso/daemon.lock` is kept
-  to preserve the lock identity; it does not mean a daemon is still running.
+  to preserve the lock identity; it does not mean a daemon is still running. A second
+  daemon started by launchd waits for the first to exit instead of being relaunched
+  every ten seconds; a manual `inverso --daemon` in a terminal exits immediately.
 - Other scrolling utilities can also reverse events. Enable reversal in only one tool.
 
 ## Development checks
@@ -183,6 +187,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swift test
 
 Tests also exercise a real dedicated run loop while the caller is blocked, callback
 recovery, resource cleanup, concurrent control operations, and mixed-event stress.
+A regression test counts the test process's read-only shared memory regions to prove
+that synthetic scroll events share one event source.
 Smoothing tests inject a clock, frame driver and output sink; they do not post events
 to the desktop. Actual CoreGraphics event-source fixtures need an interactive macOS
 session and may be unavailable inside a restricted sandbox.
@@ -192,6 +198,11 @@ Its numbers measure processing cost, not end-to-end hardware or display latency.
 
 Version 0.3.1 corrects the short wheel distance in 0.3.0 and adds live speed tuning.
 See the [distance correction record](docs/research/2026-09-24-scroll-speed.md).
+
+Version 0.3.2 fixes intermittent scroll freezes and vanished notches in smooth mode:
+0.3.1 created a WindowServer event source for every synthetic event (1.7 GB after four
+days of use) and discarded consumed notches when the pointer moved.
+See the [scroll freeze record](docs/research/2026-09-28-scroll-freeze.md).
 
 See the [source study](docs/research/2026-09-24-scrolling.md) and
 [validation record](docs/research/2026-09-24-validation.md) for trade-offs,
@@ -210,4 +221,4 @@ these applications or their private HID/touch APIs was added:
   since Core Graphics can change those fields together.
 - [LinearMouse, MIT, `d82e98f`](https://github.com/linearmouse/linearmouse/blob/d82e98fba7f2b70c63f46f7444300336a96bd54e/LinearMouse/EventTap/EventTap.swift#L104-L134):
   periodically check tap validity/enabled state and explicitly invalidate the tap
-  during cleanup. Inverso implements this within its existing main run loop.
+  during cleanup. Inverso does this on its dedicated event thread.
