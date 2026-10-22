@@ -9,6 +9,21 @@ Requires macOS 13 or later. Source builds require Swift 6.4 or later.
 
 ## Install
 
+This Mac uses the local Homebrew tap in `~/Developer/homebrew-tools`:
+
+```sh
+brew install kqw8/tools/inverso
+brew services start kqw8/tools/inverso
+inverso status
+```
+
+Manage that installation with `brew services stop/restart kqw8/tools/inverso` and
+`brew uninstall kqw8/tools/inverso`. Do not combine Homebrew services with the
+native `inverso install/start/stop/uninstall` commands. The tap preserves the working
+0.4.0 executable and its signature; source code remains in this checkout.
+
+For a separate installation built directly from source:
+
 Build from this checkout, then copy the executable to a stable location before
 registering the service:
 
