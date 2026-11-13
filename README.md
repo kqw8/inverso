@@ -1,15 +1,12 @@
+English | [简体中文](README.zh-CN.md)
+
 # Inverso
 
-`inverso` is a small macOS CLI daemon that reverses a physical mouse wheel while
-leaving trackpad-like scrolling alone.
+A small macOS CLI daemon that reverses physical mouse-wheel scrolling while leaving trackpad-like events alone. No menu bar app or smoothing layer.
 
-It is intentionally not a menu bar app. Install it once, let launchd keep it running, and control it from the terminal.
+Requires macOS 13+. The Homebrew package is for Apple Silicon (arm64); source builds require Swift 6.4+.
 
-Requires macOS 13 or later. Source builds require Swift 6.4 or later.
-
-## Install
-
-On Apple Silicon, install with Homebrew:
+## Homebrew
 
 ```sh
 brew tap kqw8/tools
@@ -18,177 +15,101 @@ brew services start kqw8/tools/inverso
 inverso status
 ```
 
-Manage that installation with `brew services stop/restart kqw8/tools/inverso` and
-`brew uninstall kqw8/tools/inverso`. Do not combine Homebrew services with the
-native `inverso install/start/stop/uninstall` commands. The tap preserves the working
-0.4.0 executable and its signature. Installation alone does not start the service.
+Installation alone does not start the service. The package preserves the 0.4.0 executable and its signature. Run services as your login user, without `sudo`.
 
-To remove it:
+Upgrade:
 
 ```sh
 brew services stop kqw8/tools/inverso
-brew uninstall kqw8/tools/inverso
+brew upgrade kqw8/tools/inverso
+brew services start kqw8/tools/inverso
 ```
 
-After confirming that no Inverso daemon is running, optional remaining files are
-`~/Library/Logs/inverso.out.log`, `~/Library/Logs/inverso.err.log`, and
-`~/Library/Application Support/Inverso/daemon.lock`. Never delete the lock file
-while a daemon is running. Remove any stale Inverso permission entry manually in
-System Settings; uninstalling does not reset macOS privacy permissions.
+Use `brew services restart kqw8/tools/inverso` to restart. **Do not mix Homebrew services with native `inverso install/start/stop/uninstall` commands.**
 
-For a separate installation built directly from source:
+## Source installation
 
-Build from this checkout, then copy the executable to a stable location before
-registering the service:
+For a separate source-managed installation, build from this checkout and copy the executable to a stable location:
 
 ```sh
 swift build -c release
 sudo install -m 755 "$(swift build -c release --show-bin-path)/inverso" /usr/local/bin/inverso
-inverso install
+/usr/local/bin/inverso install
 ```
 
-`inverso install` registers the LaunchAgent with the executable's absolute path and
-starts it. Registering a binary inside `.build` would make the service stop working
-after that directory is cleaned. After rebuilding, copy the new binary and run `inverso install` again to
-reload the service.
+`install` registers the executable's absolute path, enables start-at-login, and reloads the service. Do not register a binary inside `.build`; cleaning it would break the service. After rebuilding, replace the installed binary and run `install` again.
 
-## Native service commands (source installs only)
+Native commands are for source installations only:
+
+| Command | Effect |
+| --- | --- |
+| `inverso install` | Register/reload the service and enable start-at-login |
+| `inverso start` | Start/restart the service and enable start-at-login |
+| `inverso stop` | Stop for this session; it may start at the next login |
+| `inverso uninstall` | Stop, disable start-at-login, remove LaunchAgent and logs; keep the binary |
+
+## Permissions and status
+
+macOS requires Accessibility permission to read and rewrite input events. The daemon requests approval and retries while permission is missing. You can also run:
 
 ```sh
-inverso install
+inverso permission
 inverso status
-inverso permission
-inverso stop
-inverso start
-inverso uninstall
 ```
 
-`install` enables start-at-login and reloads the service.
-`stop` unloads the service for the current session; it can start again at the next login.
-`start` enables start-at-login and starts/restarts the service. `uninstall` stops it,
-disables start-at-login, and removes its LaunchAgent and logs; the binary stays in place.
+Approve the installed executable in **System Settings > Privacy & Security > Device Control and Data Access** on macOS 27; earlier versions call this permission page **Accessibility**. This is not the general Accessibility settings category. Replacing a locally built or ad hoc signed binary may require removing and re-adding its permission entry.
 
-`status` distinguishes a loaded LaunchAgent from a running process and reports whether
-that process has an enabled scroll event tap. Query failures appear as `unknown` with
-the underlying error. The Accessibility line describes the CLI process making the
-query; the daemon's event tap is checked separately.
-
-## Permission
-
-macOS requires Accessibility permission for tools that read and rewrite input events.
-
-When the background service starts without permission, Inverso asks macOS for approval and keeps retrying while it waits. You can also trigger the same flow manually:
-
-```sh
-inverso permission
-```
-
-On macOS 27, approve Inverso in System Settings -> Privacy & Security ->
-**Device Control and Data Access** (设备控制和数据访问). Earlier macOS versions
-call this permission page **Accessibility**. This is a privacy permission page,
-not the general Accessibility settings category.
-
-This helper finds the installed executable on PATH, opens the permission page,
-and reveals the executable in Finder:
+From this checkout, the optional helper locates the executable on `PATH`, opens the permission page, reveals the binary in Finder, and checks the daemon's event tap after approval:
 
 ```sh
 bash scripts/authorize-inverso.command
 ```
 
-Drag the selected executable into the permission list and enable its switch.
-The helper waits for your approval, then checks the background daemon's event tap.
-It does not change the binary or reset any permissions.
+The helper currently prints Chinese instructions. It does not replace the binary or reset permissions; if the daemon's tap is already enabled, it exits without opening the approval flow.
 
-If macOS does not list the binary, add the executable shown by the helper manually.
-For a source install, add the path you actually installed, such as `~/.local/bin/inverso`.
-Replacing a locally built or ad hoc signed binary may require removing and re-adding
-that executable in Accessibility settings.
+`status` distinguishes a loaded LaunchAgent, a running process, and an enabled scroll event tap. **Accessibility (this process)** describes the CLI making the query, not the daemon. The daemon's tap is checked separately; failed queries report `unknown`, with launchctl errors shown when available.
 
-Scroll input arrives through macOS event callbacks on a dedicated,
-interactive-priority thread; it is never polled. The LaunchAgent also uses interactive scheduling
-so macOS does not treat this input filter as background work. For Homebrew installs,
-use `brew services restart kqw8/tools/inverso` after an upgrade. For source installs,
-run `inverso install` after replacing an older binary to update its LaunchAgent settings.
+## Behavior and limitations
 
-The daemon's health timer runs every five seconds on the control thread.
-Permission checks and log writes stay there; brief tap-state checks run on the
-event thread that owns the tap. Permission checks and log writes cannot hold up the scroll callback.
-A timeout notification re-enables the tap immediately; the health check rebuilds an
-invalid one and resumes when permission returns.
-Repeated identical failures are logged once until the state changes. Status lines
-from the running daemon start with a local timestamp, and the health check reports
-when and how often macOS disabled the tap (after a slow callback or because of user
-input).
-Logs are in `~/Library/Logs/inverso.err.log` and `~/Library/Logs/inverso.out.log`.
+- Only vertical wheel deltas are reversed in place. Horizontal deltas, modifiers, timing, and the scroll curve are preserved; pointer movement, clicks, and keys are not intercepted.
+- Wheel detection uses scroll phase, momentum phase, and scroll count: a heuristic, not hardware identification. Pixel-based scrolling is not excluded on its own. Test Magic Mouse, remote input, and third-party scrolling drivers on your actual setup.
+- Event callbacks run on a dedicated interactive-priority thread without polling. A five-second health check handles permission recovery and invalid taps; timeout notifications re-enable the tap immediately.
+- Only one daemon per user is allowed. The empty `daemon.lock` remains after exit to preserve lock identity; its presence does not mean the daemon is running. A second launchd-managed daemon waits; a manual `inverso --daemon` exits immediately.
+- Enable reversal in only one scrolling utility. Legacy `--smooth` / `--no-smooth` arguments are accepted but ignored; source installs can rewrite old LaunchAgents with `inverso install`.
 
-## Notes
+## Uninstall and leftovers
 
-Inverso handles ordinary physical mouse-wheel events. Trackpad-like events are passed through unchanged.
+For Homebrew:
 
-- Each wheel event is reversed in place and returned immediately: no new events,
-  timers or WindowServer calls. Its timing, scroll curve, location and modifiers
-  stay exactly as the mouse produced them.
-- Inverso taps scroll-wheel events only; pointer movement, clicks and keys never pass
-  through it.
-- Only vertical deltas are reversed; horizontal deltas and modifier keys are preserved.
-- Detection uses scroll phase, momentum phase, and scroll count. It is a heuristic,
-  not hardware identification. Pixel-based scrolling alone is not excluded because
-  mouse drivers can produce it too. Magic Mouse, remote input, and third-party smooth
-  scrolling drivers need testing on the actual setup.
-- One daemon per user is allowed. The lock is released automatically when its process
-  exits. Its empty file in `~/Library/Application Support/Inverso/daemon.lock` is kept
-  to preserve the lock identity; it does not mean a daemon is still running. A second
-  daemon started by launchd waits for the first to exit instead of being relaunched
-  every ten seconds; a manual `inverso --daemon` in a terminal exits immediately.
-- A LaunchAgent written by 0.3 still passes `--smooth` or `--no-smooth`; the daemon
-  accepts and ignores it. For native source installs, run `inverso install` to rewrite it.
-- Other scrolling utilities can also reverse events. Enable reversal in only one tool.
+```sh
+brew services stop kqw8/tools/inverso
+pgrep -fl -x inverso
+brew services list
+```
 
-## Development checks
+Confirm the service is stopped and `pgrep` finds no processes (exit status 1), then run:
+
+```sh
+brew uninstall kqw8/tools/inverso
+```
+
+For source installations, use `inverso uninstall`, confirm all processes have exited, then manually remove the installed binary if desired.
+
+Possible leftovers:
+
+- `~/Library/Logs/inverso.out.log` and `~/Library/Logs/inverso.err.log` (native uninstall removes these).
+- `~/Library/Application Support/Inverso/daemon.lock`.
+- `~/Library/LaunchAgents/com.kqw8.inverso.plist` if service removal was incomplete.
+
+Inspect remaining service files before cleanup. **Never delete the lock while any Inverso process is running or its service can restart**: doing so can allow multiple daemons. Uninstalling does not reset macOS TCC permissions; manually remove stale entries in System Settings.
+
+## Development and background
 
 ```sh
 swift test
 bash scripts/benchmark.sh
 ```
 
-The Swift tests require an Xcode toolchain with XCTest.
-Tests cover event filtering, delta preservation, permission loss/recovery, instance
-locking, plist serialization, and launchctl failure handling without changing the
-real background service. Physical-device behavior still needs manual checks:
-mouse/trackpad switching with inertia, Shift + wheel, reconnection, sleep/wake,
-and revoking/regranting Accessibility permission. On machines where `xcode-select`
-points to Command Line Tools, select a full Xcode toolchain for the test command only:
+Tests require an Xcode toolchain with XCTest. If Command Line Tools is selected, use `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swift test`. Tests cover transforms, permissions, locking, service handling, and event-thread recovery without posting desktop events or changing the real service. The benchmark uses unposted in-memory events and measures processing cost, not hardware/display latency. Physical-device behavior still requires manual validation.
 
-```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swift test
-```
-
-Tests also exercise a real dedicated run loop while the caller is blocked, callback
-recovery, resource cleanup, concurrent control operations, and mixed-event stress.
-Tests never post events to the desktop.
-The benchmark compiles the production transform with optimization and measures
-unposted in-memory events. It never takes over the mouse or asks for permissions.
-Its numbers measure processing cost, not end-to-end hardware or display latency.
-
-Version 0.4.0 removes the smooth scrolling added in 0.3: Inverso only reverses
-wheel events in place again. The [scroll freeze record](docs/research/2026-09-28-scroll-freeze.md)
-explains how that layer caused freezes and, in 0.3.1, 1.7 GB of leaked memory.
-
-See the [source study](docs/research/2026-09-24-scrolling.md) and
-[validation record](docs/research/2026-09-24-validation.md) for trade-offs,
-reproducible checks and the physical-device acceptance checklist.
-
-## Implementation references
-
-The following open-source implementations informed the review; no dependency on
-these applications or their private HID/touch APIs was added:
-
-- [UnnaturalScrollWheels, GPL-3.0, `07a61a0`](https://github.com/ther0n/UnnaturalScrollWheels/blob/07a61a0ddc73f37ff2e14a10afe4cec50f69184d/UnnaturalScrollWheels/ScrollInterceptor.swift#L41-L64):
-  its alternate detection explains why the existing phase-based heuristic is retained
-  for mouse drivers that set `isContinuous`.
-- [Scroll Reverser, Apache-2.0, `187bf39`](https://github.com/pilotmoon/Scroll-Reverser/blob/187bf3945b6107cd8486327c6165f32e523535a4/MouseTap.m#L210-L220):
-  cache deltas before editing and restore point/fixed-point fields after the line delta,
-  since Core Graphics can change those fields together.
-- [LinearMouse, MIT, `d82e98f`](https://github.com/linearmouse/linearmouse/blob/d82e98fba7f2b70c63f46f7444300336a96bd54e/LinearMouse/EventTap/EventTap.swift#L104-L134):
-  periodically check tap validity/enabled state and explicitly invalidate the tap
-  during cleanup. Inverso does this on its dedicated event thread.
+Version 0.4.0 removes the smoothing layer introduced in 0.3. See the [scroll freeze record](docs/research/2026-09-28-scroll-freeze.md), [source study](docs/research/2026-09-24-scrolling.md), and [validation record](docs/research/2026-09-24-validation.md) for implementation references, trade-offs, and device checks.
