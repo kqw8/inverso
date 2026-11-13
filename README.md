@@ -9,9 +9,10 @@ Requires macOS 13 or later. Source builds require Swift 6.4 or later.
 
 ## Install
 
-This Mac uses the local Homebrew tap in `~/Developer/homebrew-tools`:
+On Apple Silicon, install with Homebrew:
 
 ```sh
+brew tap kqw8/tools
 brew install kqw8/tools/inverso
 brew services start kqw8/tools/inverso
 inverso status
@@ -20,7 +21,20 @@ inverso status
 Manage that installation with `brew services stop/restart kqw8/tools/inverso` and
 `brew uninstall kqw8/tools/inverso`. Do not combine Homebrew services with the
 native `inverso install/start/stop/uninstall` commands. The tap preserves the working
-0.4.0 executable and its signature; source code remains in this checkout.
+0.4.0 executable and its signature. Installation alone does not start the service.
+
+To remove it:
+
+```sh
+brew services stop kqw8/tools/inverso
+brew uninstall kqw8/tools/inverso
+```
+
+After confirming that no Inverso daemon is running, optional remaining files are
+`~/Library/Logs/inverso.out.log`, `~/Library/Logs/inverso.err.log`, and
+`~/Library/Application Support/Inverso/daemon.lock`. Never delete the lock file
+while a daemon is running. Remove any stale Inverso permission entry manually in
+System Settings; uninstalling does not reset macOS privacy permissions.
 
 For a separate installation built directly from source:
 
@@ -38,7 +52,7 @@ starts it. Registering a binary inside `.build` would make the service stop work
 after that directory is cleaned. After rebuilding, copy the new binary and run `inverso install` again to
 reload the service.
 
-## Commands
+## Native service commands (source installs only)
 
 ```sh
 inverso install
@@ -74,8 +88,8 @@ On macOS 27, approve Inverso in System Settings -> Privacy & Security ->
 call this permission page **Accessibility**. This is a privacy permission page,
 not the general Accessibility settings category.
 
-For an installation at `/usr/local/bin/inverso`, this helper opens the correct
-permission page and reveals the executable in Finder:
+This helper finds the installed executable on PATH, opens the permission page,
+and reveals the executable in Finder:
 
 ```sh
 bash scripts/authorize-inverso.command
@@ -85,15 +99,16 @@ Drag the selected executable into the permission list and enable its switch.
 The helper waits for your approval, then checks the background daemon's event tap.
 It does not change the binary or reset any permissions.
 
-If macOS does not list the binary, add `/usr/local/bin/inverso` manually.
+If macOS does not list the binary, add the executable shown by the helper manually.
 For a source install, add the path you actually installed, such as `~/.local/bin/inverso`.
 Replacing a locally built or ad hoc signed binary may require removing and re-adding
 that executable in Accessibility settings.
 
 Scroll input arrives through macOS event callbacks on a dedicated,
 interactive-priority thread; it is never polled. The LaunchAgent also uses interactive scheduling
-so macOS does not treat this input filter as background work. Run `inverso install`
-after replacing an older binary to update its LaunchAgent settings.
+so macOS does not treat this input filter as background work. For Homebrew installs,
+use `brew services restart kqw8/tools/inverso` after an upgrade. For source installs,
+run `inverso install` after replacing an older binary to update its LaunchAgent settings.
 
 The daemon's health timer runs every five seconds on the control thread.
 Permission checks and log writes stay there; brief tap-state checks run on the
@@ -126,7 +141,7 @@ Inverso handles ordinary physical mouse-wheel events. Trackpad-like events are p
   daemon started by launchd waits for the first to exit instead of being relaunched
   every ten seconds; a manual `inverso --daemon` in a terminal exits immediately.
 - A LaunchAgent written by 0.3 still passes `--smooth` or `--no-smooth`; the daemon
-  accepts and ignores it. Run `inverso install` to rewrite it.
+  accepts and ignores it. For native source installs, run `inverso install` to rewrite it.
 - Other scrolling utilities can also reverse events. Enable reversal in only one tool.
 
 ## Development checks

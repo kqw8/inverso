@@ -8,7 +8,20 @@ if [ "$#" -ne 0 ]; then
   exit 2
 fi
 
-INVERSO_INSTALLED_BINARY='/usr/local/bin/inverso'
+INVERSO_INSTALLED_BINARY="$(command -v inverso || true)"
+if [ -z "$INVERSO_INSTALLED_BINARY" ]; then
+  echo '未找到 inverso；请先安装，并确认它在 PATH 中。' >&2
+  exit 1
+fi
+# Resolve Homebrew's symlink chain so Finder selects the actual executable.
+while [ -L "$INVERSO_INSTALLED_BINARY" ]; do
+  INVERSO_LINK_TARGET="$(/usr/bin/readlink "$INVERSO_INSTALLED_BINARY")"
+  case "$INVERSO_LINK_TARGET" in
+    /*) INVERSO_INSTALLED_BINARY="$INVERSO_LINK_TARGET" ;;
+    *) INVERSO_INSTALLED_BINARY="$(dirname "$INVERSO_INSTALLED_BINARY")/$INVERSO_LINK_TARGET" ;;
+  esac
+done
+INVERSO_INSTALLED_BINARY="$(cd "$(dirname "$INVERSO_INSTALLED_BINARY")" && pwd -P)/$(basename "$INVERSO_INSTALLED_BINARY")"
 if [ ! -x "$INVERSO_INSTALLED_BINARY" ]; then
   echo "找不到已安装的程序：$INVERSO_INSTALLED_BINARY" >&2
   exit 1
@@ -39,10 +52,12 @@ cat <<'INSTRUCTIONS'
     （旧版 macOS 将这个授权页面称为“辅助功能”。）
 
 请把 Finder 里选中的 inverso 拖进设置右侧的应用列表，然后打开它的开关。
-如果不能拖放：点击列表下方“+”，按 ⇧⌘G，输入 /usr/local/bin/inverso，添加并开启。
+如果不能拖放：点击列表下方“+”，按 ⇧⌘G，输入下方显示的程序路径，添加并开启。
 如果已有 inverso 但授权一直不生效，只删除它的旧条目，再拖入当前文件重新开启。
 最后的授权开关必须由你确认。保持此窗口运行，脚本会检查后台服务是否生效。
 INSTRUCTIONS
+
+printf '程序路径：%s\n' "$INVERSO_INSTALLED_BINARY"
 
 /usr/bin/open -R "$INVERSO_INSTALLED_BINARY"
 /usr/bin/open 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
